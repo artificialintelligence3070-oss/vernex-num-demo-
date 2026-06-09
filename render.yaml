@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: bot-control-panel
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --worker-class sync --timeout 120
+    envVars:
+      - key: ADMIN_PASSWORD
+        value: vern19  # CHANGE THIS
+      - key: PYTHON_VERSION
+        value: 3.11.0
