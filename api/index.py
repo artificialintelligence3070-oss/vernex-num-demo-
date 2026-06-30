@@ -23,7 +23,7 @@ ADMIN_USER = "vernex"
 ADMIN_PASS = "vernex@16vx"
 
 BASE_TARGET_URL = "https://ft-osint-api.duckdns.org/api"
-TARGET_KEY = "vernex-6a9dc4fdd5923c40b0aba27bf1e39e3f"
+TARGET_KEY = "vx-osint"
 
 # All endpoints and their example parameter strings for clean UI copy/paste
 ENDPOINTS = {
