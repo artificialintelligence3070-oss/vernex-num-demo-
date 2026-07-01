@@ -14,6 +14,7 @@ API_KEYS = {
         "daily_limit": 1000,
         "used_today": 0,
         "allowed_tools": ["all"],
+        "status": "active",
         "created_at": time.time()
     }
 }
@@ -23,9 +24,9 @@ ADMIN_USER = "vernex"
 ADMIN_PASS = "vernex@16vx"
 
 BASE_TARGET_URL = "https://ft-osint-api.duckdns.org/api"
-TARGET_KEY = "vx-osint"
+TARGET_KEY = "vernex-6a9dc4fdd5923c40b0aba27bf1e39e3f"
 
-# All endpoints and their example parameter strings for clean UI copy/paste
+# Comprehensive endpoint registry maps to clean query strings for the UI Hub
 ENDPOINTS = {
     "adv": "num=9876543210",
     "paytm": "num=9876543210",
@@ -41,12 +42,21 @@ ENDPOINTS = {
     "bgmi": "uid=5121439477",
     "snap": "username=priyapanchal272",
     "email": "email=airtel123@gmail.com",
-    "vehicle": "vehicle=MH02FZ0555",
+    "vehicle": "vehicle=KA01AB1234",
     "git": "username=ftgamer2",
     "insta": "username=cristiano",
     "tg": "info=username",
     "tgidinfo": "id=7530266953",
-    "numleak": "num=9876543210"
+    "numleak": "num=9876543210",
+    # Newly Integrated Endpoints
+    "pk": "num=9876543210",
+    "name": "name=abhiraaj",
+    "aadhar": "num=[Aadhaar Redacted]",
+    "numtoupi": "num=8945996482",
+    "pan": "pan=AXDPR2606K",
+    "veh2num": "vehicle=KL41V3504",
+    "adharfamily": "num=[Aadhaar Redacted]",
+    "bomber": "number=9876543210&counter=100"
 }
 
 def clean_response(data):
@@ -55,27 +65,11 @@ def clean_response(data):
     elif isinstance(data, list):
         return [clean_response(item) for item in data]
     elif isinstance(data, str):
-        for target in ["@ftgamer2", "@bornex Ultra", "bornex", "channel url"]:
+        # Meticulously clean out forbidden signatures and promotional branding
+        for target in ["@ftgamer2", "@bornex Ultra", "bornex Ultra", "bornex", "channel url"]:
             data = data.replace(target, "SHAYAN_EXPLORER")
         return data
     return data
-
-def verify_api_key(key: str, endpoint: str):
-    if key not in API_KEYS:
-        raise HTTPException(status_code=401, detail="Invalid API Key provided.")
-    
-    key_info = API_KEYS[key]
-    if time.time() > key_info["expires_at"]:
-        raise HTTPException(status_code=403, detail="API Key has expired.")
-        
-    if key_info["used_today"] >= key_info["daily_limit"]:
-        raise HTTPException(status_code=429, detail="Daily rate limit reached.")
-        
-    if "all" not in key_info["allowed_tools"] and endpoint not in key_info["allowed_tools"]:
-        raise HTTPException(status_code=403, detail=f"No permission for route: '{endpoint}'.")
-        
-    API_KEYS[key]["used_today"] += 1
-    return key_info
 
 @app.get("/api/{endpoint}")
 async def proxy_gateway(endpoint: str, request: Request):
@@ -88,10 +82,28 @@ async def proxy_gateway(endpoint: str, request: Request):
     if not user_key:
         return JSONResponse(status_code=401, content={"error": "API key parameter required"})
     
-    try:
-        verify_api_key(user_key, endpoint)
-    except HTTPException as e:
-        return JSONResponse(status_code=e.status_code, content={"error": e.detail})
+    if user_key not in API_KEYS:
+        return JSONResponse(status_code=401, content={"error": "Invalid API Key provided."})
+        
+    key_info = API_KEYS[user_key]
+    
+    if key_info.get("status") == "suspended":
+        return JSONResponse(status_code=403, content={"error": "YOUR KEY IS SUSPENDED ❌️ CONTACT @vernexzzz FOR RE-ACTIVATION"})
+
+    if time.time() > key_info["expires_at"]:
+        return JSONResponse(status_code=403, content={"error": "API Key has expired."})
+        
+    if key_info["used_today"] >= key_info["daily_limit"]:
+        return JSONResponse(status_code=429, content={
+            "status": "error",
+            "developer": "SHAYAN_EXPLORER",
+            "message": "YOUR REQUEST WAS FINISHED ✅️ BUY THE API TO @vernexzzz DMM FOR PREMIUM API CHEAPEST PRICE MAI DUNGA API"
+        })
+        
+    if "all" not in key_info["allowed_tools"] and endpoint not in key_info["allowed_tools"]:
+        return JSONResponse(status_code=403, content={"error": f"No permission for route: '{endpoint}'."})
+        
+    API_KEYS[user_key]["used_today"] += 1
 
     search_query = next((v for k, v in params.items() if k != 'key'), "None")
     LOGS.append({
@@ -155,9 +167,29 @@ async def generate_key(request: Request):
         "daily_limit": limit,
         "used_today": 0,
         "allowed_tools": selected_tools,
+        "status": "active",
         "created_at": time.time()
     }
     return RedirectResponse(url="/dashboard", status_code=303)
+
+@app.post("/api/admin/action")
+async def admin_action(request: Request, data: dict):
+    auth = request.cookies.get("session_auth")
+    if auth != "authenticated_securely":
+        return JSONResponse(status_code=401, content={"error": "Unauthorized"})
+        
+    action = data.get("action")
+    target_key = data.get("key")
+    
+    if target_key in API_KEYS:
+        if action == "restart":
+            API_KEYS[target_key]["used_today"] = 0
+        elif action == "suspend":
+            API_KEYS[target_key]["status"] = "suspended" if API_KEYS[target_key].get("status") != "suspended" else "active"
+        elif action == "delete":
+            del API_KEYS[target_key]
+        return {"status": "success"}
+    return JSONResponse(status_code=404, content={"error": "Key not found"})
 
 @app.get("/api/admin/data")
 async def get_admin_data(request: Request):
@@ -281,8 +313,7 @@ def get_html_template(page: str):
                             <h3 class="text-sm font-black text-white uppercase tracking-wider text-cyan-400">🔗 Live API Endpoints Hub</h3>
                             <input type="text" id="quick-key-input" oninput="updateUrlsWithKey()" placeholder="Type key here to attach automatically..." class="bg-black/60 border border-gray-800 rounded px-2.5 py-1 text-xs font-mono text-cyan-400 focus:outline-none focus:border-cyan-400 min-w-[240px]">
                         </div>
-                        <div class="max-h-60 overflow-y-auto border border-gray-900 rounded-xl bg-black/30 divide-y divide-gray-900" id="endpoints-list-box">
-                            </div>
+                        <div class="max-h-48 overflow-y-auto border border-gray-900 rounded-xl bg-black/30 divide-y divide-gray-900" id="endpoints-list-box"></div>
                     </section>
 
                     <section class="glass-panel p-6 rounded-2xl">
@@ -294,7 +325,8 @@ def get_html_template(page: str):
                                         <th class="p-3">Label</th>
                                         <th class="p-3">Secret Token</th>
                                         <th class="p-3">Quota Usage</th>
-                                        <th class="p-3">Allowed Tools Scope</th>
+                                        <th class="p-3">Scope</th>
+                                        <th class="p-3 text-right">System Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody id="keys-table-body" class="divide-y divide-gray-900"></tbody>
@@ -304,7 +336,7 @@ def get_html_template(page: str):
 
                     <section class="glass-panel p-6 rounded-2xl">
                         <h3 class="text-sm font-black text-white mb-4 uppercase tracking-wider text-cyan-400">📊 Gateway Route Telemetry Logs</h3>
-                        <div class="overflow-y-auto max-h-48 rounded-xl border border-gray-800 bg-black/20">
+                        <div class="overflow-y-auto max-h-44 rounded-xl border border-gray-800 bg-black/20">
                             <table class="w-full text-left text-[11px] font-mono">
                                 <thead class="bg-black/50 text-gray-400 border-b border-gray-800 sticky top-0">
                                     <tr>
@@ -348,13 +380,23 @@ def get_html_template(page: str):
                     Object.entries(storedEndpoints).forEach(([endpoint, queryParam]) => {
                         const directUrl = `${currentHost}/api/${endpoint}?key=${inputtedKey}&${queryParam}`;
                         container.innerHTML += `
-                            <div class="p-2.5 flex justify-between items-center gap-4 text-xs font-mono hover:bg-white/5 transition-colors">
-                                <span class="text-purple-400 font-bold min-w-[70px]">/${endpoint}</span>
-                                <input type="text" readonly value="${directUrl}" class="bg-transparent border-none text-gray-400 w-full focus:outline-none select-all text-[11px]">
-                                <button onclick="navigator.clipboard.writeText('${directUrl}'); alert('Copied endpoint string!');" class="text-[10px] uppercase bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-2 py-1 rounded hover:bg-cyan-500/20 font-bold shrink-0">Copy</button>
+                            <div class="p-2 flex justify-between items-center gap-4 text-xs font-mono hover:bg-white/5">
+                                <span class="text-purple-400 font-bold min-w-[90px]">/${endpoint}</span>
+                                <input type="text" readonly value="${directUrl}" class="bg-transparent text-gray-500 w-full text-[11px] focus:outline-none select-all">
+                                <button onclick="navigator.clipboard.writeText('${directUrl}');" class="text-[10px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-2 py-0.5 rounded font-bold">Copy</button>
                             </div>
                         `;
                     });
+                }
+
+                async function executeAction(action, key) {
+                    if (action === 'delete' && !confirm('Confirm terminal wipe for this license?')) return;
+                    const res = await fetch('/api/admin/action', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ action, key })
+                    });
+                    if(res.ok) loadDashboardMetrics();
                 }
 
                 async function loadDashboardMetrics() {
@@ -362,13 +404,12 @@ def get_html_template(page: str):
                         const response = await fetch('/api/admin/data');
                         const data = await response.json();
                         
-                        // Dynamically update the checkboxes the very first time
                         if(Object.keys(storedEndpoints).length === 0) {
                             storedEndpoints = data.endpoints;
                             const grid = document.getElementById('checkbox-grid');
                             Object.keys(storedEndpoints).forEach(tool => {
                                 grid.innerHTML += `
-                                    <label class="checkbox-card flex items-center gap-2 p-2 rounded-lg cursor-pointer text-[11px] font-mono text-gray-300">
+                                    <label class="checkbox-card flex items-center gap-2 p-1.5 rounded cursor-pointer text-[11px] text-gray-300 font-mono">
                                         <input type="checkbox" name="tools" value="${tool}" class="tool-checkbox accent-cyan-400 rounded">
                                         <span>/${tool}</span>
                                     </label>
@@ -384,14 +425,22 @@ def get_html_template(page: str):
                             let displayedScope = details.allowed_tools.join(', ');
                             if(details.allowed_tools.includes("all")) {
                                 badgeStyle = "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20";
-                                displayedScope = "FULL ROOT ACCESS";
+                                displayedScope = "FULL ROOT";
                             }
+                            
+                            const isSuspended = details.status === "suspended";
+                            
                             keysBody.innerHTML += `
-                                <tr class="border-b border-gray-900 hover:bg-white/5 transition-colors">
-                                    <td class="p-3 text-white font-sans font-bold">${details.name}</td>
+                                <tr class="border-b border-gray-900 hover:bg-white/5 transition-colors ${isSuspended ? 'opacity-40' : ''}">
+                                    <td class="p-3 text-white font-bold">${details.name}</td>
                                     <td class="p-3 text-cyan-400 font-bold cursor-pointer" onclick="document.getElementById('quick-key-input').value='${key}'; updateUrlsWithKey();">${key}</td>
-                                    <td class="p-3 text-gray-300">${details.used_today} / ${details.daily_limit}</td>
-                                    <td class="p-3"><span class="text-[10px] px-2 py-1 rounded font-bold ${badgeStyle}">${displayedScope}</span></td>
+                                    <td class="p-3">${details.used_today} / ${details.daily_limit}</td>
+                                    <td class="p-3"><span class="text-[9px] px-1.5 py-0.5 rounded font-bold ${badgeStyle}">${displayedScope}</span></td>
+                                    <td class="p-3 text-right space-x-1.5 whitespace-nowrap">
+                                        <button onclick="executeAction('restart', '${key}')" class="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded hover:bg-blue-500/20">Restart</button>
+                                        <button onclick="executeAction('suspend', '${key}')" class="text-[10px] ${isSuspended ? 'bg-amber-500 text-black' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'} px-2 py-0.5 rounded">${isSuspended ? 'Unsuspend' : 'Suspend'}</button>
+                                        <button onclick="executeAction('delete', '${key}')" class="text-[10px] bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded hover:bg-red-500/20">Delete</button>
+                                    </td>
                                 </tr>
                             `;
                         }
@@ -399,7 +448,7 @@ def get_html_template(page: str):
                         const logsBody = document.getElementById('logs-table-body');
                         logsBody.innerHTML = '';
                         if (data.logs.length === 0) {
-                            logsBody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-gray-600">No telemetry requests metrics captured.</td></tr>`;
+                            logsBody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-gray-600">No telemetry requests processed.</td></tr>`;
                         } else {
                             data.logs.slice().reverse().forEach(log => {
                                 logsBody.innerHTML += `
