@@ -1,33 +1,53 @@
-
 import os
 import time
 import requests
+import json
 from fastapi import FastAPI, Request, HTTPException, Form
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 app = FastAPI(title="SHAYAN_EXPLORER Gateway")
 
-# Global In-Memory Store
-API_KEYS = {
-    "vx-osint": {
-        "name": "Default Admin Key",
-        "expires_at": time.time() + 86400 * 30,
-        "daily_limit": 1000,
-        "used_today": 0,
-        "allowed_tools": ["all"],
-        "status": "active",
-        "created_at": time.time()
+# PERSISTENCE ENGINE: To stop keys disappearing on Vercel refreshes, 
+# we check if a local temporary data block exists, otherwise we maintain state safely.
+DATA_FILE = "/tmp/api_keys_storage.json"
+
+def load_persistent_keys():
+    default_keys = {
+        "vx-osint": {
+            "name": "Default Admin Key",
+            "expires_at": time.time() + 86400 * 30,
+            "daily_limit": 1000,
+            "used_today": 0,
+            "allowed_tools": ["all"],
+            "status": "active",
+            "created_at": time.time()
+        }
     }
-}
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r") as f:
+                return json.load(f)
+        except:
+            return default_keys
+    return default_keys
+
+def save_persistent_keys(keys_data):
+    try:
+        with open(DATA_FILE, "w") as f:
+            json.dump(keys_data, f)
+    except:
+        pass
+
+# Initialize secure storage structures
+API_KEYS = load_persistent_keys()
 LOGS = []
 
 ADMIN_USER = "vernex"
 ADMIN_PASS = "vernex@16vx"
 
 BASE_TARGET_URL = "https://ft-osint-api.duckdns.org/api"
-TARGET_KEY = "vx-osint"
+TARGET_KEY = "vernex-6a9dc4fdd5923c40b0aba27bf1e39e3f"
 
-# Comprehensive endpoint registry maps to clean query strings for the UI Hub
 ENDPOINTS = {
     "adv": "num=9876543210",
     "paytm": "num=9876543210",
@@ -49,7 +69,6 @@ ENDPOINTS = {
     "tg": "info=username",
     "tgidinfo": "id=7530266953",
     "numleak": "num=9876543210",
-    # Newly Integrated Endpoints
     "pk": "num=9876543210",
     "name": "name=abhiraaj",
     "aadhar": "num=[Aadhaar Redacted]",
@@ -66,7 +85,6 @@ def clean_response(data):
     elif isinstance(data, list):
         return [clean_response(item) for item in data]
     elif isinstance(data, str):
-        # Meticulously clean out forbidden signatures and promotional branding
         for target in ["@ftgamer2", "@bornex Ultra", "bornex Ultra", "bornex", "channel url"]:
             data = data.replace(target, "SHAYAN_EXPLORER")
         return data
@@ -74,6 +92,9 @@ def clean_response(data):
 
 @app.get("/api/{endpoint}")
 async def proxy_gateway(endpoint: str, request: Request):
+    global API_KEYS
+    API_KEYS = load_persistent_keys() # Sync fresh keys distribution state
+    
     if endpoint not in ENDPOINTS:
         return JSONResponse(status_code=444, content={"error": "Endpoint not found"})
     
@@ -105,6 +126,7 @@ async def proxy_gateway(endpoint: str, request: Request):
         return JSONResponse(status_code=403, content={"error": f"No permission for route: '{endpoint}'."})
         
     API_KEYS[user_key]["used_today"] += 1
+    save_persistent_keys(API_KEYS)
 
     search_query = next((v for k, v in params.items() if k != 'key'), "None")
     LOGS.append({
@@ -148,6 +170,7 @@ async def dashboard_view(request: Request):
 
 @app.post("/keys/generate")
 async def generate_key(request: Request):
+    global API_KEYS
     auth = request.cookies.get("session_auth")
     if auth != "authenticated_securely":
         raise HTTPException(status_code=401)
@@ -162,6 +185,7 @@ async def generate_key(request: Request):
     if not selected_tools or "all" in selected_tools:
         selected_tools = ["all"]
     
+    API_KEYS = load_persistent_keys()
     API_KEYS[custom_key] = {
         "name": custom_name,
         "expires_at": time.time() + (86400 * duration_days),
@@ -171,10 +195,12 @@ async def generate_key(request: Request):
         "status": "active",
         "created_at": time.time()
     }
+    save_persistent_keys(API_KEYS)
     return RedirectResponse(url="/dashboard", status_code=303)
 
 @app.post("/api/admin/action")
 async def admin_action(request: Request, data: dict):
+    global API_KEYS
     auth = request.cookies.get("session_auth")
     if auth != "authenticated_securely":
         return JSONResponse(status_code=401, content={"error": "Unauthorized"})
@@ -182,6 +208,7 @@ async def admin_action(request: Request, data: dict):
     action = data.get("action")
     target_key = data.get("key")
     
+    API_KEYS = load_persistent_keys()
     if target_key in API_KEYS:
         if action == "restart":
             API_KEYS[target_key]["used_today"] = 0
@@ -189,15 +216,17 @@ async def admin_action(request: Request, data: dict):
             API_KEYS[target_key]["status"] = "suspended" if API_KEYS[target_key].get("status") != "suspended" else "active"
         elif action == "delete":
             del API_KEYS[target_key]
+        save_persistent_keys(API_KEYS)
         return {"status": "success"}
-    return JSONResponse(status_code=404, content={"error": "Key not found"})
+    return JSONResponse(status_code=444, content={"error": "Key not found"})
 
 @app.get("/api/admin/data")
 async def get_admin_data(request: Request):
     auth = request.cookies.get("session_auth")
     if auth != "authenticated_securely":
         return JSONResponse(status_code=401, content={"error": "Unauthorized"})
-    return {"keys": API_KEYS, "logs": LOGS, "endpoints": ENDPOINTS}
+    current_keys = load_persistent_keys()
+    return {"keys": current_keys, "logs": LOGS, "endpoints": ENDPOINTS}
 
 def get_html_template(page: str):
     if page == "login":
