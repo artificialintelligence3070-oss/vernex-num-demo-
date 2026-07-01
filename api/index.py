@@ -7,8 +7,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 app = FastAPI(title="SHAYAN_EXPLORER Gateway")
 
-# PERSISTENCE ENGINE: To stop keys disappearing on Vercel refreshes, 
-# we check if a local temporary data block exists, otherwise we maintain state safely.
+# PERSISTENCE ENGINE: Prevents keys from disappearing on serverless refreshes
 DATA_FILE = "/tmp/api_keys_storage.json"
 
 def load_persistent_keys():
@@ -80,20 +79,43 @@ ENDPOINTS = {
 }
 
 def clean_response(data):
+    """
+    Recursively scrubs data blocks and double-encoded stringified JSON payloads 
+    to seamlessly wipe unwanted promotional branding signatures.
+    """
+    # If the upstream returned a double-stringified JSON payload, unpack it first
+    if isinstance(data, str):
+        try:
+            unpacked = json.loads(data)
+            if isinstance(unpacked, (dict, list)):
+                data = unpacked
+        except ValueError:
+            pass
+
     if isinstance(data, dict):
-        return {k: clean_response(v) for k, v in data.items() if k not in ['channel', 'credit']}
+        # Remove hidden metrics metadata fields if present
+        cleaned_dict = {}
+        for k, v in data.items():
+            if k in ['channel', 'credit', 'by']:
+                continue
+            cleaned_dict[k] = clean_response(v)
+        return cleaned_dict
+        
     elif isinstance(data, list):
         return [clean_response(item) for item in data]
+        
     elif isinstance(data, str):
+        # Meticulously clean out forbidden signatures and promotional branding lines
         for target in ["@ftgamer2", "@bornex Ultra", "bornex Ultra", "bornex", "channel url"]:
             data = data.replace(target, "SHAYAN_EXPLORER")
         return data
+        
     return data
 
 @app.get("/api/{endpoint}")
 async def proxy_gateway(endpoint: str, request: Request):
     global API_KEYS
-    API_KEYS = load_persistent_keys() # Sync fresh keys distribution state
+    API_KEYS = load_persistent_keys() # Pull latest keys deployment array
     
     if endpoint not in ENDPOINTS:
         return JSONResponse(status_code=444, content={"error": "Endpoint not found"})
@@ -136,18 +158,28 @@ async def proxy_gateway(endpoint: str, request: Request):
         "query": search_query
     })
 
+    # Swap input token for target gateway authentication token
     params["key"] = TARGET_KEY
     target_url = f"{BASE_TARGET_URL}/{endpoint}"
     
     try:
         response = requests.get(target_url, params=params, timeout=10)
         response.raise_for_status()
-        return {"status": "success", "developer": "SHAYAN_EXPLORER", "data": clean_response(response.json())}
-    except Exception:
+        
+        # Try processing as JSON data first
         try:
-            return {"status": "success", "developer": "SHAYAN_EXPLORER", "data": response.text}
-        except:
-            return JSONResponse(status_code=502, content={"error": "Upstream error"})
+            raw_json = response.json()
+            processed_data = clean_response(raw_json)
+        except Exception:
+            processed_data = clean_response(response.text)
+            
+        return {
+            "status": "success", 
+            "developer": "SHAYAN_EXPLORER", 
+            "data": processed_data
+        }
+    except Exception:
+        return JSONResponse(status_code=502, content={"error": "Upstream error or timeout handling response profile."})
 
 @app.get("/", response_class=HTMLResponse)
 async def login_page():
