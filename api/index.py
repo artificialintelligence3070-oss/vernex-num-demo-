@@ -16,7 +16,7 @@ RAZORPAY_KEY_ID = "rzp_live_STCeqa012GtBoO"
 RAZORPAY_KEY_SECRET = "YkdgGBF4jPugiyG0fhxCozxq"
 
 # 🤖 TELEGRAM NOTIFICATION DISPATCH TARGETS
-TELEGRAM_BOT_TOKEN = "7303649195:AAH_QxN8w3H4Dlw22oXbXFmYx1m-example" 
+TELEGRAM_BOT_TOKEN = "8699920822:AAHuxlRhoUPvo2tkCu9_ENb4YZ_oLLWJo4w" 
 TELEGRAM_CHANNELS = ["6624927068", "8505747325"]
 
 # 🔒 CENTRAL MASTER ACCOUNT CREDENTIALS
@@ -37,59 +37,64 @@ ENDPOINTS = {
 }
 
 BASE_TARGET_URL = "https://ft-osint-api.duckdns.org/api"
-TARGET_KEY = "vernex-6a9dc4fdd5923c40b0aba27bf1e39e3f"
-LOGS = []
+TARGET_KEY = "vx-osint"
+
+# Local fallback structure to ensure zero crashes if KV database is slow or down
+DEFAULT_STRUCTURE = {
+    "users": {},
+    "api_keys": {
+        "vx-osint-root": {
+            "name": "Root Administrative Core", "expires_at": 4102444800, # Year 2100
+            "daily_limit": 99999, "used_today": 0, "allowed_tools": ["all"], "status": "active"
+        }
+    },
+    "prices": {
+        "number": {"name": "📞 Number API Suite", "m1": 100, "m3": 250, "tools": ["adv", "paytm", "calltracer", "number"]},
+        "leak": {"name": "💎 Leak Suite", "m1": 400, "m3": 1100, "tools": ["email", "numleak", "adv"]},
+        "aadhaar": {"name": "🪪 Aadhaar + Family Suite", "m1": 200, "m3": 550, "tools": ["aadhar", "adharfamily"]},
+        "upi": {"name": "💳 UPI Matrix Suite", "m1": 150, "m3": 400, "tools": ["upi", "numtoupi"]},
+        "ifsc": {"name": "🏦 IFSC Lookup Module", "m1": 50, "m3": 120, "tools": ["ifsc"]},
+        "pan": {"name": "🪪 PAN to GST Identifier", "m1": 100, "m3": 250, "tools": ["pan"]},
+        "pincode": {"name": "📍 Pincode Directory Finder", "m1": 1, "m3": 3, "tools": ["pincode"]}, 
+        "ip": {"name": "🌐 IP Lookup Node", "m1": 30, "m3": 80, "tools": ["ip"]},
+        "vehicle": {"name": "🚘 Vehicle Owner Suite", "m1": 400, "m3": 1000, "tools": ["vehicle", "veh2num", "challan"]},
+        "gaming": {"name": "🎮 FF + BGMI Data Scraper", "m1": 80, "m3": 200, "tools": ["ff", "bgmi"]},
+        "snapchat": {"name": "👻 Snapchat Intelligence Node", "m1": 80, "m3": 200, "tools": ["snap"]},
+        "bomber": {"name": "💣 SMS Bomber Layer", "m1": 150, "m3": 400, "tools": ["bomber"]},
+        "pakistan": {"name": "🇵🇰 Pakistan Data Search", "m1": 100, "m3": 250, "tools": ["pk"]},
+        "bundle_starter": {"name": "🔥 Starter Pack Bundle", "m1": 500, "m3": 1300, "tools": ["adv", "paytm", "calltracer", "number", "aadhar", "adharfamily", "upi", "numtoupi", "pan", "ifsc", "pincode", "ip", "ff", "bgmi"]},
+        "bundle_pro": {"name": "🔥 Pro Pack Bundle", "m1": 1200, "m3": 3000, "tools": ["all_except_vehicle"]},
+        "bundle_ultimate": {"name": "🔥 Ultimate Pack Bundle", "m1": 1600, "m3": 4200, "tools": ["all"]}
+    },
+    "free_claims": {}
+}
 
 def fetch_master_db():
-    default_structure = {
-        "users": {},
-        "api_keys": {
-            "vx-osint-root": {
-                "name": "Root Administrative Core", "expires_at": time.time() + 31536000,
-                "daily_limit": 99999, "used_today": 0, "allowed_tools": ["all"], "status": "active"
-            }
-        },
-        "prices": {
-            "number": {"name": "📞 Number API Suite", "m1": 100, "m3": 250, "tools": ["adv", "paytm", "calltracer", "number"]},
-            "leak": {"name": "💎 HiTeckGroop.in Leak Suite", "m1": 400, "m3": 1100, "tools": ["email", "numleak", "adv"]},
-            "aadhaar": {"name": "🪪 Aadhaar + Family Suite", "m1": 200, "m3": 550, "tools": ["aadhar", "adharfamily"]},
-            "upi": {"name": "💳 UPI Matrix Suite", "m1": 150, "m3": 400, "tools": ["upi", "numtoupi"]},
-            "ifsc": {"name": "🏦 IFSC Lookup Module", "m1": 50, "m3": 120, "tools": ["ifsc"]},
-            "pan": {"name": "🪪 PAN to GST Identifier", "m1": 100, "m3": 250, "tools": ["pan"]},
-            "pincode": {"name": "📍 Pincode Directory Finder", "m1": 1, "m3": 3, "tools": ["pincode"]}, # 🔥 Updated to 1 Rs!
-            "ip": {"name": "🌐 IP Lookup Node", "m1": 30, "m3": 80, "tools": ["ip"]},
-            "vehicle": {"name": "🚘 Vehicle Owner Suite", "m1": 400, "m3": 1000, "tools": ["vehicle", "veh2num", "challan"]},
-            "gaming": {"name": "🎮 FF + BGMI Data Scraper", "m1": 80, "m3": 200, "tools": ["ff", "bgmi"]},
-            "snapchat": {"name": "👻 Snapchat Intelligence Node", "m1": 80, "m3": 200, "tools": ["snap"]},
-            "bomber": {"name": "💣 SMS Bomber Layer", "m1": 150, "m3": 400, "tools": ["bomber"]},
-            "pakistan": {"name": "🇵🇰 Pakistan Data Search", "m1": 100, "m3": 250, "tools": ["pk"]},
-            "bundle_starter": {"name": "🔥 Starter Pack Bundle", "m1": 500, "m3": 1300, "tools": ["adv", "paytm", "calltracer", "number", "aadhar", "adharfamily", "upi", "numtoupi", "pan", "ifsc", "pincode", "ip", "ff", "bgmi"]},
-            "bundle_pro": {"name": "🔥 Pro Pack Bundle", "m1": 1200, "m3": 3000, "tools": ["all_except_vehicle"]},
-            "bundle_ultimate": {"name": "🔥 Ultimate Pack Bundle", "m1": 1600, "m3": 4200, "tools": ["all"]}
-        },
-        "free_claims": {}
-    }
     try:
-        res = requests.get(CLOUD_DB_URL, timeout=6)
-        if res.status_code == 200 and isinstance(res.json(), dict) and "api_keys" in res.json(): 
+        res = requests.get(CLOUD_DB_URL, timeout=3)
+        if res.status_code == 200:
             db = res.json()
-            # Ensure the price update overwrites any existing saved DB values
-            if "prices" in db and "pincode" in db["prices"]:
-                db["prices"]["pincode"]["m1"] = 1
-                db["prices"]["pincode"]["m3"] = 3
-            return db
-        requests.post(CLOUD_DB_URL, json=default_structure, timeout=5)
-        return default_structure
-    except: return default_structure
+            if isinstance(db, dict) and "api_keys" in db:
+                if "prices" in db and "pincode" in db["prices"]:
+                    db["prices"]["pincode"]["m1"] = 1
+                    db["prices"]["pincode"]["m3"] = 3
+                return db
+        return DEFAULT_STRUCTURE
+    except:
+        return DEFAULT_STRUCTURE
 
 def commit_master_db(payload):
-    try: requests.post(CLOUD_DB_URL, json=payload, timeout=6)
-    except: pass
+    try: 
+        requests.post(CLOUD_DB_URL, json=payload, timeout=3)
+    except: 
+        pass
 
 def send_telegram_alert(msg: str):
     for ch in TELEGRAM_CHANNELS:
-        try: requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage", json={"chat_id": ch, "text": msg, "parse_mode": "Markdown"}, timeout=4)
-        except: pass
+        try: 
+            requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage", json={"chat_id": ch, "text": msg, "parse_mode": "Markdown"}, timeout=3)
+        except: 
+            pass
 
 @app.get("/api/{endpoint}")
 async def proxy_gateway(endpoint: str, request: Request):
@@ -118,7 +123,7 @@ async def proxy_gateway(endpoint: str, request: Request):
     
     params["key"] = TARGET_KEY
     try:
-        r = requests.get(f"{BASE_TARGET_URL}/{endpoint}", params=params, timeout=12)
+        r = requests.get(f"{BASE_TARGET_URL}/{endpoint}", params=params, timeout=8)
         return {"status": "success", "developer": "SHAYAN_EXPLORER", "data": r.json() if r.status_code==200 else r.text}
     except: return JSONResponse(status_code=502, content={"error": "Gateway communication breakdown"})
 
@@ -158,10 +163,10 @@ async def home_portal(request: Request):
         </div>
         """
         
-    js_prices = json.dumps(db["prices"])
+    js_prices = json.dumps(db.get("prices", DEFAULT_STRUCTURE["prices"]))
     
     catalog_cards = ""
-    for k, v in db["prices"].items():
+    for k, v in db.get("prices", DEFAULT_STRUCTURE["prices"]).items():
         catalog_cards += f"""
         <div class="border border-gray-800 bg-black/40 p-4 rounded-xl flex flex-col justify-between gap-3">
             <div>
@@ -222,10 +227,6 @@ async def home_portal(request: Request):
         <script>
             const corePrices = {js_prices};
             let activeCart = [];
-
-            style = document.createElement('style');
-            style.innerHTML = 'input[type="radio"]:checked { background-color: #22d3ee !important; }';
-            document.head.appendChild(style);
 
             function toggleCartItem(apiId) {{
                 const idx = activeCart.indexOf(apiId);
@@ -310,7 +311,7 @@ async def home_portal(request: Request):
                         }});
                         const resData = await verifyResponse.json();
                         if (resData.status === 'success') {{
-                            alert("Payment Verified! Your Active License Token has been deployed directly into your Console History Profile!");
+                            alert("Payment Verified! Key deployed directly to your console history.");
                             window.location.href = "/dashboard";
                         }} else {{
                             alert("Infrastructure deployment anomaly.");
@@ -344,8 +345,8 @@ async def process_cart_webhook_callback(data: dict):
     for item in cart_items:
         i_id = item["id"]
         horizon = item["horizon"]
-        if i_id in db["prices"]:
-            cfg = db["prices"][i_id]
+        if i_id in db.get("prices", DEFAULT_STRUCTURE["prices"]):
+            cfg = db.get("prices", DEFAULT_STRUCTURE["prices"])[i_id]
             aggregated_tools.extend(cfg["tools"])
             days = 30 if horizon == "m1" else 90
             if days > max_days: max_days = days
@@ -426,14 +427,11 @@ async def process_registration(username: str = Form(...), password: str = Form(.
             "allowed_tools": ["insta", "git", "tg", "tgidinfo"], "status": "active"
         }
         db["free_claims"][username] = True
-        commit_master_db(db)
         
-        response = RedirectResponse(url="/", status_code=303)
-        response.set_cookie(key="session_auth", value=f"user_{username}", httponly=True)
-        return response
-    
     commit_master_db(db)
-    return RedirectResponse(url="/", status_code=303)
+    response = RedirectResponse(url="/", status_code=303)
+    response.set_cookie(key="session_auth", value=f"user_{username}", httponly=True)
+    return response
 
 @app.post("/login")
 async def handle_login(username: str = Form(...), password: str = Form(...)):
@@ -461,7 +459,7 @@ async def dashboard_view(request: Request):
     if is_admin:
         admin_controls_ui = """
         <section class="p-4 rounded-xl bg-black/40 border border-red-500/10 mb-4 space-y-3">
-            <h2 class="text-xs font-black text-red-400 uppercase tracking-wider font-mono">🔑 Root Admin: Forge Ultimate Key🔑</h2>
+            <h2 class="text-xs font-black text-red-400 uppercase tracking-wider font-mono">🔑 Root Admin: Forge Key🔑</h2>
             <form action="/keys/generate" method="POST" class="space-y-3">
                 <input type="text" name="custom_name" placeholder="Holder Target Label" required class="w-full bg-black/60 border border-gray-800 p-2 rounded text-xs text-white">
                 <input type="text" name="custom_key" placeholder="License Token String" required class="w-full bg-black/60 border border-gray-800 p-2 rounded text-xs text-white font-mono">
@@ -469,30 +467,18 @@ async def dashboard_view(request: Request):
                 <button type="submit" class="w-full py-2 bg-red-500 text-black font-bold text-xs rounded uppercase font-mono">Generate Ultimate License</button>
             </form>
         </section>
-
-        <section class="p-4 rounded-xl bg-black/40 border border-cyan-500/10 mb-4 space-y-3">
-            <h2 class="text-xs font-black text-cyan-400 uppercase tracking-wider font-mono">🛠️ Core API Price Engine Configuration</h2>
-            <form action="/api/admin/modify_price" method="POST" class="space-y-3">
-                <select name="api_id" class="w-full bg-black/60 border border-gray-800 p-2 rounded text-xs text-white">
-        """ + "".join([f'<option value="{k}">{v["name"]}</option>' for k, v in db["prices"].items()]) + """
-                </select>
-                <input type="number" name="m1" placeholder="New 1-Mo Base Price" required class="w-full bg-black/60 border border-gray-800 p-2 rounded text-xs text-white">
-                <input type="number" name="m3" placeholder="New 3-Mo Base Price" required class="w-full bg-black/60 border border-gray-800 p-2 rounded text-xs text-white">
-                <button type="submit" class="w-full py-2 bg-cyan-500 text-black font-bold text-xs rounded uppercase font-mono">Modify Catalog Item Record</button>
-            </form>
-        </section>
         """
 
     key_history_rows_html = ""
-    for k, v in db["api_keys"].items():
-        if is_admin or auth.replace("user_", "") in v['name']:
-            readable_expiry = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(v['expires_at']))
+    for k, v in db.get("api_keys", {}).items():
+        if is_admin or auth.replace("user_", "") in v.get('name', ''):
+            readable_expiry = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(v.get('expires_at', time.time())))
             key_history_rows_html += f"""
             <div class="pt-3 first:pt-0 space-y-1">
-                <p class="text-white font-bold">{v['name']}</p>
+                <p class="text-white font-bold">{v.get('name', 'License Key')}</p>
                 <p class="text-cyan-400 select-all font-bold font-mono tracking-wide bg-black/60 p-1.5 rounded border border-gray-800/40">{k}</p>
                 <p class="text-gray-400 text-[11px]">⏳ Expiry Date/Time/Year: <span class="text-amber-400 font-bold">{readable_expiry}</span></p>
-                <p class="text-gray-500">Usage Load: <span class="text-gray-300">{v['used_today']} / {v['daily_limit']}</span></p>
+                <p class="text-gray-500">Usage Load: <span class="text-gray-300">{v.get('used_today', 0)} / {v.get('daily_limit', 1000)}</span></p>
                 <div class="flex justify-end gap-2 pt-1">
                     <button onclick="fireAction('restart', '{k}')" class="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded">Reset</button>
                     <button onclick="fireAction('delete', '{k}')" class="text-[10px] bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded">Purge</button>
@@ -515,7 +501,7 @@ async def dashboard_view(request: Request):
             <section class="bg-black/30 border border-gray-800 p-4 rounded-xl space-y-4">
                 <h3 class="text-xs font-black text-cyan-400 uppercase tracking-wider">🛡️ Your Active License Key History Logs</h3>
                 <div class="space-y-3 divide-y divide-gray-900">
-                    {key_history_rows_html}
+                    {key_history_rows_html if key_history_rows_html else '<p class="text-gray-500">No active keys assigned to this account context.</p>'}
                 </div>
             </section>
         </div>
@@ -537,19 +523,10 @@ async def dashboard_view(request: Request):
 async def admin_forge_key(custom_name: str = Form(...), custom_key: str = Form(...), limit: int = Form(...)):
     db = fetch_master_db()
     db["api_keys"][custom_key.strip()] = {
-        "name": f"⭐ ADM: {custom_name}", "expires_at": time.time() + 31536000,
+        "name": f"⭐ ADM: {custom_name}", "expires_at": 4102444800,
         "daily_limit": limit, "used_today": 0, "allowed_tools": ["all"], "status": "active"
     }
     commit_master_db(db)
-    return RedirectResponse(url="/dashboard", status_code=303)
-
-@app.post("/api/admin/modify_price")
-async def modify_price_endpoint(api_id: str = Form(...), m1: int = Form(...), m3: int = Form(...)):
-    db = fetch_master_db()
-    if api_id in db["prices"]:
-        db["prices"][api_id]["m1"] = m1
-        db["prices"][api_id]["m3"] = m3
-        commit_master_db(db)
     return RedirectResponse(url="/dashboard", status_code=303)
 
 @app.post("/api/admin/action")
