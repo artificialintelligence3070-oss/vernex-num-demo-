@@ -7,45 +7,25 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 app = FastAPI(title="SHAYAN_EXPLORER Gateway")
 
-# PERSISTENCE ENGINE: Prevents keys from disappearing on serverless refreshes
-DATA_FILE = "/tmp/api_keys_storage.json"
-
-def load_persistent_keys():
-    default_keys = {
-        "vx-osint": {
-            "name": "Default Admin Key",
-            "expires_at": time.time() + 86400 * 30,
-            "daily_limit": 1000,
-            "used_today": 0,
-            "allowed_tools": ["all"],
-            "status": "active",
-            "created_at": time.time()
-        }
+# MEMORY BACKUP LAYER (Active container runtime state)
+API_KEYS = {
+    "vx-osint": {
+        "name": "Default Admin Key",
+        "expires_at": time.time() + 86400 * 30,
+        "daily_limit": 1000,
+        "used_today": 0,
+        "allowed_tools": ["all"],
+        "status": "active",
+        "created_at": time.time()
     }
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r") as f:
-                return json.load(f)
-        except:
-            return default_keys
-    return default_keys
-
-def save_persistent_keys(keys_data):
-    try:
-        with open(DATA_FILE, "w") as f:
-            json.dump(keys_data, f)
-    except:
-        pass
-
-# Initialize secure storage structures
-API_KEYS = load_persistent_keys()
+}
 LOGS = []
 
 ADMIN_USER = "vernex"
 ADMIN_PASS = "vernex@16vx"
 
 BASE_TARGET_URL = "https://ft-osint-api.duckdns.org/api"
-TARGET_KEY = "vx-osint"
+TARGET_KEY = "vernex-6a9dc4fdd5923c40b0aba27bf1e39e3f"
 
 ENDPOINTS = {
     "adv": "num=9876543210",
@@ -79,11 +59,6 @@ ENDPOINTS = {
 }
 
 def clean_response(data):
-    """
-    Recursively scrubs data blocks and double-encoded stringified JSON payloads 
-    to seamlessly wipe unwanted promotional branding signatures.
-    """
-    # If the upstream returned a double-stringified JSON payload, unpack it first
     if isinstance(data, str):
         try:
             unpacked = json.loads(data)
@@ -93,30 +68,22 @@ def clean_response(data):
             pass
 
     if isinstance(data, dict):
-        # Remove hidden metrics metadata fields if present
         cleaned_dict = {}
         for k, v in data.items():
             if k in ['channel', 'credit', 'by']:
                 continue
             cleaned_dict[k] = clean_response(v)
         return cleaned_dict
-        
     elif isinstance(data, list):
         return [clean_response(item) for item in data]
-        
     elif isinstance(data, str):
-        # Meticulously clean out forbidden signatures and promotional branding lines
         for target in ["@ftgamer2", "@bornex Ultra", "bornex Ultra", "bornex", "channel url"]:
             data = data.replace(target, "SHAYAN_EXPLORER")
         return data
-        
     return data
 
 @app.get("/api/{endpoint}")
 async def proxy_gateway(endpoint: str, request: Request):
-    global API_KEYS
-    API_KEYS = load_persistent_keys() # Pull latest keys deployment array
-    
     if endpoint not in ENDPOINTS:
         return JSONResponse(status_code=444, content={"error": "Endpoint not found"})
     
@@ -127,7 +94,7 @@ async def proxy_gateway(endpoint: str, request: Request):
         return JSONResponse(status_code=401, content={"error": "API key parameter required"})
     
     if user_key not in API_KEYS:
-        return JSONResponse(status_code=401, content={"error": "Invalid API Key provided."})
+        return JSONResponse(status_code=401, content={"error": "Invalid API Key provided or backend recycled. Re-sync dashboard."})
         
     key_info = API_KEYS[user_key]
     
@@ -148,7 +115,6 @@ async def proxy_gateway(endpoint: str, request: Request):
         return JSONResponse(status_code=403, content={"error": f"No permission for route: '{endpoint}'."})
         
     API_KEYS[user_key]["used_today"] += 1
-    save_persistent_keys(API_KEYS)
 
     search_query = next((v for k, v in params.items() if k != 'key'), "None")
     LOGS.append({
@@ -158,28 +124,20 @@ async def proxy_gateway(endpoint: str, request: Request):
         "query": search_query
     })
 
-    # Swap input token for target gateway authentication token
     params["key"] = TARGET_KEY
     target_url = f"{BASE_TARGET_URL}/{endpoint}"
     
     try:
         response = requests.get(target_url, params=params, timeout=10)
         response.raise_for_status()
-        
-        # Try processing as JSON data first
         try:
             raw_json = response.json()
             processed_data = clean_response(raw_json)
         except Exception:
             processed_data = clean_response(response.text)
-            
-        return {
-            "status": "success", 
-            "developer": "SHAYAN_EXPLORER", 
-            "data": processed_data
-        }
+        return {"status": "success", "developer": "SHAYAN_EXPLORER", "data": processed_data}
     except Exception:
-        return JSONResponse(status_code=502, content={"error": "Upstream error or timeout handling response profile."})
+        return JSONResponse(status_code=502, content={"error": "Upstream error or connection break."})
 
 @app.get("/", response_class=HTMLResponse)
 async def login_page():
@@ -200,6 +158,24 @@ async def dashboard_view(request: Request):
         return RedirectResponse(url="/", status_code=303)
     return get_html_template("dashboard")
 
+@app.post("/api/admin/sync_backup")
+async def sync_backup_keys(request: Request, data: dict):
+    """
+    Self-healing pipeline endpoint. Receives client-side device persistent storage keys
+    and updates the active Vercel server memory dynamically whenever a dashboard drops sync.
+    """
+    global API_KEYS
+    auth = request.cookies.get("session_auth")
+    if auth != "authenticated_securely":
+        return JSONResponse(status_code=401, content={"error": "Unauthorized"})
+    
+    client_keys = data.get("keys", {})
+    if isinstance(client_keys, dict) and client_keys:
+        for k, v in client_keys.items():
+            if k not in API_KEYS:
+                API_KEYS[k] = v
+    return {"status": "synchronized", "total_keys": len(API_KEYS)}
+
 @app.post("/keys/generate")
 async def generate_key(request: Request):
     global API_KEYS
@@ -217,7 +193,6 @@ async def generate_key(request: Request):
     if not selected_tools or "all" in selected_tools:
         selected_tools = ["all"]
     
-    API_KEYS = load_persistent_keys()
     API_KEYS[custom_key] = {
         "name": custom_name,
         "expires_at": time.time() + (86400 * duration_days),
@@ -227,8 +202,23 @@ async def generate_key(request: Request):
         "status": "active",
         "created_at": time.time()
     }
-    save_persistent_keys(API_KEYS)
-    return RedirectResponse(url="/dashboard", status_code=303)
+    # Pass execution back to the client interface so it writes directly to LocalStorage immediately
+    return HTMLResponse(f"""
+    <script>
+        let localBackup = JSON.parse(localStorage.getItem('shayan_backup_keys') || '{{}}');
+        localBackup["{custom_key}"] = {{
+            "name": "{custom_name}",
+            "expires_at": {time.time() + (86400 * duration_days)},
+            "daily_limit": {limit},
+            "used_today": 0,
+            "allowed_tools": {json.dumps(selected_tools)},
+            "status": "active",
+            "created_at": {time.time()}
+        }};
+        localStorage.setItem('shayan_backup_keys', JSON.stringify(localBackup));
+        window.location.href = "/dashboard";
+    </script>
+    """)
 
 @app.post("/api/admin/action")
 async def admin_action(request: Request, data: dict):
@@ -240,7 +230,6 @@ async def admin_action(request: Request, data: dict):
     action = data.get("action")
     target_key = data.get("key")
     
-    API_KEYS = load_persistent_keys()
     if target_key in API_KEYS:
         if action == "restart":
             API_KEYS[target_key]["used_today"] = 0
@@ -248,8 +237,7 @@ async def admin_action(request: Request, data: dict):
             API_KEYS[target_key]["status"] = "suspended" if API_KEYS[target_key].get("status") != "suspended" else "active"
         elif action == "delete":
             del API_KEYS[target_key]
-        save_persistent_keys(API_KEYS)
-        return {"status": "success"}
+        return {"status": "success", "action": action, "key": target_key}
     return JSONResponse(status_code=444, content={"error": "Key not found"})
 
 @app.get("/api/admin/data")
@@ -257,8 +245,7 @@ async def get_admin_data(request: Request):
     auth = request.cookies.get("session_auth")
     if auth != "authenticated_securely":
         return JSONResponse(status_code=401, content={"error": "Unauthorized"})
-    current_keys = load_persistent_keys()
-    return {"keys": current_keys, "logs": LOGS, "endpoints": ENDPOINTS}
+    return {"keys": API_KEYS, "logs": LOGS, "endpoints": ENDPOINTS}
 
 def get_html_template(page: str):
     if page == "login":
@@ -453,6 +440,18 @@ def get_html_template(page: str):
 
                 async function executeAction(action, key) {
                     if (action === 'delete' && !confirm('Confirm terminal wipe for this license?')) return;
+                    
+                    // First execute local update to match server side intent
+                    let localBackup = JSON.parse(localStorage.getItem('shayan_backup_keys') || '{}');
+                    if (action === 'delete') {
+                        delete localBackup[key];
+                    } else if (action === 'suspend') {
+                        if(localBackup[key]) localBackup[key].status = localBackup[key].status === 'suspended' ? 'active' : 'suspended';
+                    } else if (action === 'restart') {
+                        if(localBackup[key]) localBackup[key].used_today = 0;
+                    }
+                    localStorage.setItem('shayan_backup_keys', JSON.stringify(localBackup));
+
                     const res = await fetch('/api/admin/action', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
@@ -463,8 +462,23 @@ def get_html_template(page: str):
 
                 async function loadDashboardMetrics() {
                     try {
+                        // Anti-Recycle Pipeline: Sync client-side device cache with backend serverless memory space
+                        let localBackup = JSON.parse(localStorage.getItem('shayan_backup_keys') || '{}');
+                        if (Object.keys(localBackup).length > 0) {
+                            await fetch('/api/admin/sync_backup', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ keys: localBackup })
+                            });
+                        }
+
                         const response = await fetch('/api/admin/data');
                         const data = await response.json();
+                        
+                        // Overwrite device cache with tracking increments processed from engine logs
+                        if (data.keys && Object.keys(data.keys).length > 0) {
+                            localStorage.setItem('shayan_backup_keys', JSON.stringify(data.keys));
+                        }
                         
                         if(Object.keys(storedEndpoints).length === 0) {
                             storedEndpoints = data.endpoints;
@@ -482,10 +496,10 @@ def get_html_template(page: str):
                         
                         const keysBody = document.getElementById('keys-table-body');
                         keysBody.innerHTML = '';
-                        for (const [key, details] of Object.entries(data.keys)) {
+                        for (const [key, details] of Object.entries(data.keys || localBackup)) {
                             let badgeStyle = "bg-gray-800 text-gray-300";
-                            let displayedScope = details.allowed_tools.join(', ');
-                            if(details.allowed_tools.includes("all")) {
+                            let displayedScope = Array.isArray(details.allowed_tools) ? details.allowed_tools.join(', ') : "all";
+                            if(displayedScope.includes("all")) {
                                 badgeStyle = "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20";
                                 displayedScope = "FULL ROOT";
                             }
@@ -509,7 +523,7 @@ def get_html_template(page: str):
 
                         const logsBody = document.getElementById('logs-table-body');
                         logsBody.innerHTML = '';
-                        if (data.logs.length === 0) {
+                        if (!data.logs || data.logs.length === 0) {
                             logsBody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-gray-600">No telemetry requests processed.</td></tr>`;
                         } else {
                             data.logs.slice().reverse().forEach(log => {
@@ -524,11 +538,11 @@ def get_html_template(page: str):
                             });
                         }
                     } catch (err) {
-                        console.error("Metrics Sync Fault:", err);
+                        console.error("Metrics Sync Fault Handling Loop:", err);
                     }
                 }
                 
-                setInterval(loadDashboardMetrics, 4000);
+                setInterval(loadDashboardMetrics, 3000);
                 window.onload = loadDashboardMetrics;
             </script>
         </body>
