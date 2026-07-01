@@ -39,12 +39,12 @@ ENDPOINTS = {
 BASE_TARGET_URL = "https://ft-osint-api.duckdns.org/api"
 TARGET_KEY = "vx-osint"
 
-# Local fallback structure to ensure zero crashes if KV database is slow or down
+# Fail-safe structural dictionary to protect environment state during network spikes
 DEFAULT_STRUCTURE = {
     "users": {},
     "api_keys": {
         "vx-osint-root": {
-            "name": "Root Administrative Core", "expires_at": 4102444800, # Year 2100
+            "name": "Root Administrative Core", "expires_at": 4102444800,
             "daily_limit": 99999, "used_today": 0, "allowed_tools": ["all"], "status": "active"
         }
     },
@@ -71,7 +71,7 @@ DEFAULT_STRUCTURE = {
 
 def fetch_master_db():
     try:
-        res = requests.get(CLOUD_DB_URL, timeout=3)
+        res = requests.get(CLOUD_DB_URL, timeout=4)
         if res.status_code == 200:
             db = res.json()
             if isinstance(db, dict) and "api_keys" in db:
@@ -84,17 +84,13 @@ def fetch_master_db():
         return DEFAULT_STRUCTURE
 
 def commit_master_db(payload):
-    try: 
-        requests.post(CLOUD_DB_URL, json=payload, timeout=3)
-    except: 
-        pass
+    try: requests.post(CLOUD_DB_URL, json=payload, timeout=4)
+    except: pass
 
 def send_telegram_alert(msg: str):
     for ch in TELEGRAM_CHANNELS:
-        try: 
-            requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage", json={"chat_id": ch, "text": msg, "parse_mode": "Markdown"}, timeout=3)
-        except: 
-            pass
+        try: requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage", json={"chat_id": ch, "text": msg, "parse_mode": "Markdown"}, timeout=3)
+        except: pass
 
 @app.get("/api/{endpoint}")
 async def proxy_gateway(endpoint: str, request: Request):
@@ -123,7 +119,7 @@ async def proxy_gateway(endpoint: str, request: Request):
     
     params["key"] = TARGET_KEY
     try:
-        r = requests.get(f"{BASE_TARGET_URL}/{endpoint}", params=params, timeout=8)
+        r = requests.get(f"{BASE_TARGET_URL}/{endpoint}", params=params, timeout=10)
         return {"status": "success", "developer": "SHAYAN_EXPLORER", "data": r.json() if r.status_code==200 else r.text}
     except: return JSONResponse(status_code=502, content={"error": "Gateway communication breakdown"})
 
@@ -132,7 +128,6 @@ async def home_portal(request: Request):
     auth = request.cookies.get("session_auth")
     user_header = ""
     free_api_banner = ""
-    
     db = fetch_master_db()
     
     if auth:
@@ -145,7 +140,7 @@ async def home_portal(request: Request):
         </div>
         """
         computed_trial_token = f"FREE-1HR-{hashlib.md5(uname.encode()).hexdigest()[:8].upper()}"
-        if computed_trial_token in db["api_keys"]:
+        if computed_trial_token in db.get("api_keys", {}):
             k_data = db["api_keys"][computed_trial_token]
             if time.time() < k_data["expires_at"]:
                 free_api_banner = f"""
@@ -163,10 +158,11 @@ async def home_portal(request: Request):
         </div>
         """
         
-    js_prices = json.dumps(db.get("prices", DEFAULT_STRUCTURE["prices"]))
+    prices_source = db.get("prices", DEFAULT_STRUCTURE["prices"])
+    js_prices = json.dumps(prices_source)
     
     catalog_cards = ""
-    for k, v in db.get("prices", DEFAULT_STRUCTURE["prices"]).items():
+    for k, v in prices_source.items():
         catalog_cards += f"""
         <div class="border border-gray-800 bg-black/40 p-4 rounded-xl flex flex-col justify-between gap-3">
             <div>
@@ -311,7 +307,7 @@ async def home_portal(request: Request):
                         }});
                         const resData = await verifyResponse.json();
                         if (resData.status === 'success') {{
-                            alert("Payment Verified! Key deployed directly to your console history.");
+                            alert("Payment Verified! Your Active License Token has been deployed directly into your Console History Profile!");
                             window.location.href = "/dashboard";
                         }} else {{
                             alert("Infrastructure deployment anomaly.");
@@ -342,11 +338,12 @@ async def process_cart_webhook_callback(data: dict):
     purchased_labels = []
     max_days = 30
     
+    prices_ref = db.get("prices", DEFAULT_STRUCTURE["prices"])
     for item in cart_items:
         i_id = item["id"]
         horizon = item["horizon"]
-        if i_id in db.get("prices", DEFAULT_STRUCTURE["prices"]):
-            cfg = db.get("prices", DEFAULT_STRUCTURE["prices"])[i_id]
+        if i_id in prices_ref:
+            cfg = prices_ref[i_id]
             aggregated_tools.extend(cfg["tools"])
             days = 30 if horizon == "m1" else 90
             if days > max_days: max_days = days
@@ -413,11 +410,13 @@ async def register_view():
 async def process_registration(username: str = Form(...), password: str = Form(...)):
     db = fetch_master_db()
     username = username.strip()
-    if username in db["users"] or username.lower() == ADMIN_USER:
+    if username in db.get("users", {}) or username.lower() == ADMIN_USER:
         return HTMLResponse("<script>alert('Identifier occupied.'); window.history.back();</script>")
     
+    if "users" not in db: db["users"] = {}
     db["users"][username] = hashlib.sha256(password.encode()).hexdigest()
     
+    if "free_claims" not in db: db["free_claims"] = {}
     if username not in db["free_claims"]:
         trial_token = f"FREE-1HR-{hashlib.md5(username.encode()).hexdigest()[:8].upper()}"
         db["api_keys"][trial_token] = {
@@ -442,7 +441,7 @@ async def handle_login(username: str = Form(...), password: str = Form(...)):
         return response
         
     hashed = hashlib.sha256(password.encode()).hexdigest()
-    if username in db["users"] and db["users"][username] == hashed:
+    if username in db.get("users", {}) and db["users"][username] == hashed:
         response = RedirectResponse(url="/", status_code=303)
         response.set_cookie(key="session_auth", value=f"user_{username}", httponly=True)
         return response
@@ -457,14 +456,26 @@ async def dashboard_view(request: Request):
     
     admin_controls_ui = ""
     if is_admin:
+        prices_ref = db.get("prices", DEFAULT_STRUCTURE["prices"])
         admin_controls_ui = """
         <section class="p-4 rounded-xl bg-black/40 border border-red-500/10 mb-4 space-y-3">
-            <h2 class="text-xs font-black text-red-400 uppercase tracking-wider font-mono">🔑 Root Admin: Forge Key🔑</h2>
+            <h2 class="text-xs font-black text-red-400 uppercase tracking-wider font-mono">🔑 Root Admin: Forge Key 🔑</h2>
             <form action="/keys/generate" method="POST" class="space-y-3">
                 <input type="text" name="custom_name" placeholder="Holder Target Label" required class="w-full bg-black/60 border border-gray-800 p-2 rounded text-xs text-white">
                 <input type="text" name="custom_key" placeholder="License Token String" required class="w-full bg-black/60 border border-gray-800 p-2 rounded text-xs text-white font-mono">
                 <input type="number" name="limit" value="9999" class="w-full bg-black/60 border border-gray-800 p-2 rounded text-xs text-white">
                 <button type="submit" class="w-full py-2 bg-red-500 text-black font-bold text-xs rounded uppercase font-mono">Generate Ultimate License</button>
+            </form>
+        </section>
+        <section class="p-4 rounded-xl bg-black/40 border border-cyan-500/10 mb-4 space-y-3">
+            <h2 class="text-xs font-black text-cyan-400 uppercase tracking-wider font-mono">🛠️ Core API Price Engine Configuration</h2>
+            <form action="/api/admin/modify_price" method="POST" class="space-y-3">
+                <select name="api_id" class="w-full bg-black/60 border border-gray-800 p-2 rounded text-xs text-white">
+        """ + "".join([f'<option value="{k}">{v["name"]}</option>' for k, v in prices_ref.items()]) + """
+                </select>
+                <input type="number" name="m1" placeholder="New 1-Mo Base Price" required class="w-full bg-black/60 border border-gray-800 p-2 rounded text-xs text-white">
+                <input type="number" name="m3" placeholder="New 3-Mo Base Price" required class="w-full bg-black/60 border border-gray-800 p-2 rounded text-xs text-white">
+                <button type="submit" class="w-full py-2 bg-cyan-500 text-black font-bold text-xs rounded uppercase font-mono">Modify Catalog Item Record</button>
             </form>
         </section>
         """
@@ -477,7 +488,7 @@ async def dashboard_view(request: Request):
             <div class="pt-3 first:pt-0 space-y-1">
                 <p class="text-white font-bold">{v.get('name', 'License Key')}</p>
                 <p class="text-cyan-400 select-all font-bold font-mono tracking-wide bg-black/60 p-1.5 rounded border border-gray-800/40">{k}</p>
-                <p class="text-gray-400 text-[11px]">⏳ Expiry Date/Time/Year: <span class="text-amber-400 font-bold">{readable_expiry}</span></p>
+                <p class="text-gray-400 text-[11px]">⏳ Expiry: <span class="text-amber-400 font-bold">{readable_expiry}</span></p>
                 <p class="text-gray-500">Usage Load: <span class="text-gray-300">{v.get('used_today', 0)} / {v.get('daily_limit', 1000)}</span></p>
                 <div class="flex justify-end gap-2 pt-1">
                     <button onclick="fireAction('restart', '{k}')" class="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded">Reset</button>
@@ -522,11 +533,21 @@ async def dashboard_view(request: Request):
 @app.post("/keys/generate")
 async def admin_forge_key(custom_name: str = Form(...), custom_key: str = Form(...), limit: int = Form(...)):
     db = fetch_master_db()
+    if "api_keys" not in db: db["api_keys"] = {}
     db["api_keys"][custom_key.strip()] = {
         "name": f"⭐ ADM: {custom_name}", "expires_at": 4102444800,
         "daily_limit": limit, "used_today": 0, "allowed_tools": ["all"], "status": "active"
     }
     commit_master_db(db)
+    return RedirectResponse(url="/dashboard", status_code=303)
+
+@app.post("/api/admin/modify_price")
+async def modify_price_endpoint(api_id: str = Form(...), m1: int = Form(...), m3: int = Form(...)):
+    db = fetch_master_db()
+    if "prices" in db and api_id in db["prices"]:
+        db["prices"][api_id]["m1"] = m1
+        db["prices"][api_id]["m3"] = m3
+        commit_master_db(db)
     return RedirectResponse(url="/dashboard", status_code=303)
 
 @app.post("/api/admin/action")
@@ -535,7 +556,7 @@ async def admin_action(request: Request, data: dict):
     if not auth: return JSONResponse(status_code=401, content={"error": "Unauthorized"})
     action, target_key = data.get("action"), data.get("key")
     db = fetch_master_db()
-    if target_key in db["api_keys"]:
+    if "api_keys" in db and target_key in db["api_keys"]:
         if auth != "authenticated_securely" and auth.replace("user_", "") not in db["api_keys"][target_key]["name"]:
             return JSONResponse(status_code=403)
         if action == "restart": db["api_keys"][target_key]["used_today"] = 0
