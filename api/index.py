@@ -6,7 +6,7 @@ import hashlib
 from fastapi import FastAPI, Request, HTTPException, Form
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-app = FastAPI(title="SHAYAN_EXPLORER Gateway Premium Enterprise")
+app = FastAPI(title="SHAYAN_EXPLORER Gateway Ultimate Teleport Edition")
 
 # 🛰️ PERMANENT DATASTORE REPOSITORY CLUSTER
 CLOUD_DB_URL = "https://kvbh.vercel.app/api/run/shayan_ultimate_v3_store"
@@ -16,7 +16,7 @@ RAZORPAY_KEY_ID = "rzp_live_STCeqa012GtBoO"
 RAZORPAY_KEY_SECRET = "YkdgGBF4jPugiyG0fhxCozxq"
 
 # 🤖 TELEGRAM NOTIFICATION DISPATCH TARGETS
-TELEGRAM_BOT_TOKEN =  "8699920822:AAHuxlRhoUPvo2tkCu9_ENb4YZ_oLLWJo4w" # Put real bot token here
+TELEGRAM_BOT_TOKEN = "7303649195:AAH_QxN8w3H4Dlw22oXbXFmYx1m-example" 
 TELEGRAM_CHANNELS = ["6624927068", "8505747325"]
 
 # 🔒 CENTRAL MASTER ACCOUNT CREDENTIALS
@@ -56,7 +56,7 @@ def fetch_master_db():
             "upi": {"name": "💳 UPI Matrix Suite", "m1": 150, "m3": 400, "tools": ["upi", "numtoupi"]},
             "ifsc": {"name": "🏦 IFSC Lookup Module", "m1": 50, "m3": 120, "tools": ["ifsc"]},
             "pan": {"name": "🪪 PAN to GST Identifier", "m1": 100, "m3": 250, "tools": ["pan"]},
-            "pincode": {"name": "📍 Pincode Directory Finder", "m1": 30, "m3": 80, "tools": ["pincode"]},
+            "pincode": {"name": "📍 Pincode Directory Finder", "m1": 1, "m3": 3, "tools": ["pincode"]}, # 🔥 Updated to 1 Rs!
             "ip": {"name": "🌐 IP Lookup Node", "m1": 30, "m3": 80, "tools": ["ip"]},
             "vehicle": {"name": "🚘 Vehicle Owner Suite", "m1": 400, "m3": 1000, "tools": ["vehicle", "veh2num", "challan"]},
             "gaming": {"name": "🎮 FF + BGMI Data Scraper", "m1": 80, "m3": 200, "tools": ["ff", "bgmi"]},
@@ -71,7 +71,13 @@ def fetch_master_db():
     }
     try:
         res = requests.get(CLOUD_DB_URL, timeout=6)
-        if res.status_code == 200 and isinstance(res.json(), dict) and "api_keys" in res.json(): return res.json()
+        if res.status_code == 200 and isinstance(res.json(), dict) and "api_keys" in res.json(): 
+            db = res.json()
+            # Ensure the price update overwrites any existing saved DB values
+            if "prices" in db and "pincode" in db["prices"]:
+                db["prices"]["pincode"]["m1"] = 1
+                db["prices"]["pincode"]["m3"] = 3
+            return db
         requests.post(CLOUD_DB_URL, json=default_structure, timeout=5)
         return default_structure
     except: return default_structure
@@ -120,15 +126,30 @@ async def proxy_gateway(endpoint: str, request: Request):
 async def home_portal(request: Request):
     auth = request.cookies.get("session_auth")
     user_header = ""
+    free_api_banner = ""
+    
+    db = fetch_master_db()
+    
     if auth:
         uname = auth.replace("user_", "") if auth != "authenticated_securely" else "Admin Root"
         user_header = f"""
-        <div class="flex items-center gap-3 bg-cyan-500/10 border border-cyan-500/20 p-3 rounded-xl mb-6">
+        <div class="flex items-center gap-3 bg-cyan-500/10 border border-cyan-500/20 p-3 rounded-xl mb-4">
             <div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
-            <p class="text-xs font-mono text-cyan-400">Authenticated: <span class="text-white font-bold">{uname}</span></p>
-            <a href="/dashboard" class="ml-auto text-[11px] uppercase bg-cyan-500 text-black px-2.5 py-1 font-bold rounded">Console</a>
+            <p class="text-xs font-mono text-cyan-400">User: <span class="text-white font-bold">{uname}</span></p>
+            <a href="/dashboard" class="ml-auto text-[11px] uppercase bg-cyan-500 text-black px-2.5 py-1 font-bold rounded">Console Hub</a>
         </div>
         """
+        computed_trial_token = f"FREE-1HR-{hashlib.md5(uname.encode()).hexdigest()[:8].upper()}"
+        if computed_trial_token in db["api_keys"]:
+            k_data = db["api_keys"][computed_trial_token]
+            if time.time() < k_data["expires_at"]:
+                free_api_banner = f"""
+                <div class="bg-gradient-to-r from-blue-600/20 to-cyan-600/20 border border-cyan-500/40 p-4 rounded-xl mb-6">
+                    <p class="text-xs font-mono font-black text-cyan-400 uppercase tracking-wide">🎁 YOUR FREE API KEY IS HERE:</p>
+                    <p class="text-sm font-mono text-white bg-black/50 p-2 rounded border border-gray-800 my-2 select-all font-bold tracking-wider text-center">{computed_trial_token}</p>
+                    <p class="text-[10px] text-gray-400 font-mono">🔒 Available Routes: <span class="text-white font-bold">📸 Instagram, 🐙 GitHub, ✈️ TG Username, 🆔 TG ID Info</span></p>
+                </div>
+                """
     else:
         user_header = """
         <div class="grid grid-cols-2 gap-3 mb-6">
@@ -137,7 +158,6 @@ async def home_portal(request: Request):
         </div>
         """
         
-    db = fetch_master_db()
     js_prices = json.dumps(db["prices"])
     
     catalog_cards = ""
@@ -179,11 +199,7 @@ async def home_portal(request: Request):
             </header>
 
             {user_header}
-
-            <div class="bg-amber-400/5 border border-amber-400/10 p-4 rounded-xl mb-6 text-center">
-                <p class="text-xs font-mono text-amber-400 font-bold">🎁 NEW REGISTRATION BONUS PROMO</p>
-                <p class="text-[11px] text-gray-400 mt-1 font-mono">Create an account to claim a 1-Hour full operational token directly into your tracking history logs.</p>
-            </div>
+            {free_api_banner}
 
             <h2 class="text-xs font-black text-cyan-400 uppercase tracking-widest mb-4 font-mono">🛒 DIGITAL API MARKET STORES</h2>
             <div class="space-y-3">{catalog_cards}</div>
@@ -200,12 +216,16 @@ async def home_portal(request: Request):
                 <span class="text-xs font-black uppercase font-mono text-white">Total Billing Load:</span>
                 <span class="text-lg font-black text-emerald-400 font-mono" id="summary-grand">₹0.00</span>
             </div>
-            <button onclick="triggerCheckout()" class="w-full py-3.5 bg-gradient-to-r from-cyan-400 to-blue-500 text-black font-mono font-black uppercase text-xs rounded-xl tracking-widest shadow-lg shadow-cyan-500/20">Authorize Real-time Payment</button>
+            <button onclick="triggerCheckout('{uname if auth else ''}')" class="w-full py-3.5 bg-gradient-to-r from-cyan-400 to-blue-500 text-black font-mono font-black uppercase text-xs rounded-xl tracking-widest shadow-lg shadow-cyan-500/20">Authorize Real-time Payment</button>
         </div>
 
         <script>
             const corePrices = {js_prices};
             let activeCart = [];
+
+            style = document.createElement('style');
+            style.innerHTML = 'input[type="radio"]:checked { background-color: #22d3ee !important; }';
+            document.head.appendChild(style);
 
             function toggleCartItem(apiId) {{
                 const idx = activeCart.indexOf(apiId);
@@ -246,9 +266,12 @@ async def home_portal(request: Request):
                 document.getElementById('summary-grand').innerText = '₹' + grandTotal + '.00';
             }}
 
-            async function triggerCheckout() {{
-                const username = prompt("Verify Target Account User Identity mapping label to receive license key:");
-                if (!username) return alert("Operation rejected. Identity binding required.");
+            async function triggerCheckout(currentSessionUser) {{
+                let username = currentSessionUser;
+                if (!username) {{
+                    username = prompt("Please provide your registered account Username target to bind the purchased license key:");
+                    if (!username) return alert("Operation rejected. Identity binding required.");
+                }}
 
                 let totalBase = 0;
                 let descriptionPayload = [];
@@ -287,8 +310,8 @@ async def home_portal(request: Request):
                         }});
                         const resData = await verifyResponse.json();
                         if (resData.status === 'success') {{
-                            alert("License Generated: " + resData.generated_key);
-                            window.location.href = "/login_view";
+                            alert("Payment Verified! Your Active License Token has been deployed directly into your Console History Profile!");
+                            window.location.href = "/dashboard";
                         }} else {{
                             alert("Infrastructure deployment anomaly.");
                         }}
@@ -330,14 +353,13 @@ async def process_cart_webhook_callback(data: dict):
             
     allocated_key = f"SHAYAN-{hashlib.md5(str(time.time()).encode()).hexdigest()[:12].upper()}"
     db["api_keys"][allocated_key] = {
-        "name": f"{username} - Cart Bundle",
+        "name": f"{username} - Purchased Bundle",
         "expires_at": time.time() + (86400 * max_days),
         "daily_limit": 2500, "used_today": 0,
         "allowed_tools": list(set(aggregated_tools)), "status": "active"
     }
     commit_master_db(db)
     
-    # TELEGRAM NOTIFICATION DISPATCH ENGINE
     alert_msg = (
         f"💰 *A PERSON BUY AN API*\n\n"
         f"👤 *Subscriber Username:* `{username}`\n"
@@ -381,7 +403,7 @@ async def register_view():
             <input type="text" name="username" required class="w-full bg-black/60 border border-gray-800 p-2.5 text-sm rounded focus:outline-none"></div>
             <div><label class="block text-[11px] font-mono text-gray-400 mb-1">System Password</label>
             <input type="password" name="password" required class="w-full bg-black/60 border border-gray-800 p-2.5 text-sm rounded focus:outline-none"></div>
-            <button type="submit" class="w-full py-3 bg-gradient-to-r from-blue-500 to-cyan-400 text-black font-mono font-bold uppercase text-xs rounded-xl tracking-wider">Register & Claim 1-Hour Promo</button>
+            <button type="submit" class="w-full py-3 bg-gradient-to-r from-blue-500 to-cyan-400 text-black font-mono font-bold uppercase text-xs rounded-xl tracking-wider">Register Account</button>
         </form>
     </body></html>
     """
@@ -394,17 +416,21 @@ async def process_registration(username: str = Form(...), password: str = Form(.
         return HTMLResponse("<script>alert('Identifier occupied.'); window.history.back();</script>")
     
     db["users"][username] = hashlib.sha256(password.encode()).hexdigest()
+    
     if username not in db["free_claims"]:
         trial_token = f"FREE-1HR-{hashlib.md5(username.encode()).hexdigest()[:8].upper()}"
         db["api_keys"][trial_token] = {
             "name": f"🎁 {username} (1 Hour Trial Session)",
-            "expires_at": time.time() + 3600, # Strict 1-hour expiration
+            "expires_at": time.time() + 3600,
             "daily_limit": 100, "used_today": 0,
             "allowed_tools": ["insta", "git", "tg", "tgidinfo"], "status": "active"
         }
         db["free_claims"][username] = True
         commit_master_db(db)
-        return HTMLResponse(f"<script>alert('Account Created! 1-HOUR Token: {trial_token}'); window.location.href='/';</script>")
+        
+        response = RedirectResponse(url="/", status_code=303)
+        response.set_cookie(key="session_auth", value=f"user_{username}", httponly=True)
+        return response
     
     commit_master_db(db)
     return RedirectResponse(url="/", status_code=303)
@@ -413,13 +439,13 @@ async def process_registration(username: str = Form(...), password: str = Form(.
 async def handle_login(username: str = Form(...), password: str = Form(...)):
     db = fetch_master_db()
     if username == ADMIN_USER and password == ADMIN_PASS:
-        response = RedirectResponse(url="/dashboard", status_code=303)
+        response = RedirectResponse(url="/", status_code=303)
         response.set_cookie(key="session_auth", value="authenticated_securely", httponly=True)
         return response
         
     hashed = hashlib.sha256(password.encode()).hexdigest()
     if username in db["users"] and db["users"][username] == hashed:
-        response = RedirectResponse(url="/dashboard", status_code=303)
+        response = RedirectResponse(url="/", status_code=303)
         response.set_cookie(key="session_auth", value=f"user_{username}", httponly=True)
         return response
     return HTMLResponse("<script>alert('Invalid credentials.'); window.location.href='/login_view';</script>")
@@ -435,7 +461,7 @@ async def dashboard_view(request: Request):
     if is_admin:
         admin_controls_ui = """
         <section class="p-4 rounded-xl bg-black/40 border border-red-500/10 mb-4 space-y-3">
-            <h2 class="text-xs font-black text-red-400 uppercase tracking-wider font-mono">🔑 Root Admin: Forge Ultimate Key</h2>
+            <h2 class="text-xs font-black text-red-400 uppercase tracking-wider font-mono">🔑 Root Admin: Forge Ultimate Key🔑</h2>
             <form action="/keys/generate" method="POST" class="space-y-3">
                 <input type="text" name="custom_name" placeholder="Holder Target Label" required class="w-full bg-black/60 border border-gray-800 p-2 rounded text-xs text-white">
                 <input type="text" name="custom_key" placeholder="License Token String" required class="w-full bg-black/60 border border-gray-800 p-2 rounded text-xs text-white font-mono">
@@ -457,6 +483,23 @@ async def dashboard_view(request: Request):
         </section>
         """
 
+    key_history_rows_html = ""
+    for k, v in db["api_keys"].items():
+        if is_admin or auth.replace("user_", "") in v['name']:
+            readable_expiry = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(v['expires_at']))
+            key_history_rows_html += f"""
+            <div class="pt-3 first:pt-0 space-y-1">
+                <p class="text-white font-bold">{v['name']}</p>
+                <p class="text-cyan-400 select-all font-bold font-mono tracking-wide bg-black/60 p-1.5 rounded border border-gray-800/40">{k}</p>
+                <p class="text-gray-400 text-[11px]">⏳ Expiry Date/Time/Year: <span class="text-amber-400 font-bold">{readable_expiry}</span></p>
+                <p class="text-gray-500">Usage Load: <span class="text-gray-300">{v['used_today']} / {v['daily_limit']}</span></p>
+                <div class="flex justify-end gap-2 pt-1">
+                    <button onclick="fireAction('restart', '{k}')" class="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded">Reset</button>
+                    <button onclick="fireAction('delete', '{k}')" class="text-[10px] bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded">Purge</button>
+                </div>
+            </div>
+            """
+
     return f"""
     <!DOCTYPE html>
     <html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><script src="https://cdn.tailwindcss.com"></script></head>
@@ -464,38 +507,28 @@ async def dashboard_view(request: Request):
         <div class="max-w-md mx-auto">
             <header class="flex justify-between items-center mb-6 pb-2 border-b border-gray-800">
                 <h1 class="text-sm font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">SYSTEM DASHBOARD</h1>
-                <a href="/" class="text-[10px] bg-red-500/10 text-red-400 px-2 py-1 rounded border border-red-500/20">Exit</a>
+                <a href="/" class="text-[10px] bg-red-500/10 text-red-400 px-2 py-1 rounded border border-red-500/20">Back to Store</a>
             </header>
 
             {admin_controls_ui}
 
             <section class="bg-black/30 border border-gray-800 p-4 rounded-xl space-y-4">
-                <h3 class="text-xs font-black text-cyan-400 uppercase tracking-wider">🛡️ Your Deployment Tracking Logs</h3>
+                <h3 class="text-xs font-black text-cyan-400 uppercase tracking-wider">🛡️ Your Active License Key History Logs</h3>
                 <div class="space-y-3 divide-y divide-gray-900">
-    """ + "".join([f"""
-                    <div class="pt-3 first:pt-0 space-y-1">
-                        <p class="text-white font-bold">{v['name']}</p>
-                        <p class="text-cyan-400 select-all font-bold font-mono tracking-wide bg-black/60 p-1.5 rounded border border-gray-800/40">{k}</p>
-                        <p class="text-gray-500">Usage: <span class="text-gray-300">{v['used_today']} / {v['daily_limit']}</span></p>
-                        <div class="flex justify-end gap-2 pt-1">
-                            <button onclick="fireAction('restart', '{k}')" class="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded">Reset</button>
-                            <button onclick="fireAction('delete', '{k}')" class="text-[10px] bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded">Purge</button>
-                        </div>
-                    </div>
-    """ for k, v in db["api_keys"].items() if is_admin or auth.replace("user_", "") in v['name']]) + """
+                    {key_history_rows_html}
                 </div>
             </section>
         </div>
         <script>
-            async function fireAction(action, key) {
+            async function fireAction(action, key) {{
                 if(!confirm('Execute authorization state override command?')) return;
-                const res = await fetch('/api/admin/action', {
+                const res = await fetch('/api/admin/action', {{
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ action, key })
-                });
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{ action, key }})
+                }});
                 if(res.ok) window.location.reload();
-            }
+            }}
         </script>
     </body></html>
     """
