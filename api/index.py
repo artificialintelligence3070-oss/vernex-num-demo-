@@ -7,25 +7,46 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 app = FastAPI(title="SHAYAN_EXPLORER Gateway")
 
-# MEMORY BACKUP LAYER (Active container runtime state)
-API_KEYS = {
-    "vx-osint": {
-        "name": "Default Admin Key",
-        "expires_at": time.time() + 86400 * 30,
-        "daily_limit": 1000,
-        "used_today": 0,
-        "allowed_tools": ["all"],
-        "status": "active",
-        "created_at": time.time()
+# PERMANENT CLOUD PERSISTENCE LAYER (Zero-Setup Free Storage Bin)
+# This saves your keys externally so they never vanish when Vercel goes to sleep.
+BIN_URL = "https://kvbh.vercel.app/api/run/shayan_explorer_vault"
+
+def load_persistent_keys():
+    default_keys = {
+        "vx-osint": {
+            "name": "Default Admin Key",
+            "expires_at": time.time() + 86400 * 30,
+            "daily_limit": 1000,
+            "used_today": 0,
+            "allowed_tools": ["all"],
+            "status": "active",
+            "created_at": time.time()
+        }
     }
-}
+    try:
+        response = requests.get(BIN_URL, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, dict) and len(data) > 0:
+                return data
+        return default_keys
+    except:
+        return default_keys
+
+def save_persistent_keys(keys_data):
+    try:
+        requests.post(BIN_URL, json=keys_data, timeout=5)
+    except:
+        pass
+
+# Initialize tracking structures
 LOGS = []
 
 ADMIN_USER = "vernex"
 ADMIN_PASS = "vernex@16vx"
 
 BASE_TARGET_URL = "https://ft-osint-api.duckdns.org/api"
-TARGET_KEY = "vx-osint"
+TARGET_KEY = "vernex-6a9dc4fdd5923c40b0aba27bf1e39e3f"
 
 ENDPOINTS = {
     "adv": "num=9876543210",
@@ -93,10 +114,13 @@ async def proxy_gateway(endpoint: str, request: Request):
     if not user_key:
         return JSONResponse(status_code=401, content={"error": "API key parameter required"})
     
-    if user_key not in API_KEYS:
-        return JSONResponse(status_code=401, content={"error": "Invalid API Key provided or backend recycled. Re-sync dashboard."})
+    # Force a direct call to the persistent cloud bin storage layer
+    active_keys = load_persistent_keys()
+    
+    if user_key not in active_keys:
+        return JSONResponse(status_code=401, content={"error": "Invalid API Key provided."})
         
-    key_info = API_KEYS[user_key]
+    key_info = active_keys[user_key]
     
     if key_info.get("status") == "suspended":
         return JSONResponse(status_code=403, content={"error": "YOUR KEY IS SUSPENDED ❌️ CONTACT @vernexzzz FOR RE-ACTIVATION"})
@@ -108,13 +132,14 @@ async def proxy_gateway(endpoint: str, request: Request):
         return JSONResponse(status_code=429, content={
             "status": "error",
             "developer": "SHAYAN_EXPLORER",
-            "message": "YOUR REQUEST WAS FINISHED ✅️ BUY THE API TO @vernexzzz DMM FOR PREMIUM API CHEAPEST PRICE MAI DUNGA API"
+            "message": "YOUR REQUEST WAS FINISHED ✅️ BUY THE API TO @vernexzzz"
         })
         
     if "all" not in key_info["allowed_tools"] and endpoint not in key_info["allowed_tools"]:
         return JSONResponse(status_code=403, content={"error": f"No permission for route: '{endpoint}'."})
         
-    API_KEYS[user_key]["used_today"] += 1
+    active_keys[user_key]["used_today"] += 1
+    save_persistent_keys(active_keys)
 
     search_query = next((v for k, v in params.items() if k != 'key'), "None")
     LOGS.append({
@@ -137,7 +162,7 @@ async def proxy_gateway(endpoint: str, request: Request):
             processed_data = clean_response(response.text)
         return {"status": "success", "developer": "SHAYAN_EXPLORER", "data": processed_data}
     except Exception:
-        return JSONResponse(status_code=502, content={"error": "Upstream error or connection break."})
+        return JSONResponse(status_code=502, content={"error": "Upstream gateway breakdown error."})
 
 @app.get("/", response_class=HTMLResponse)
 async def login_page():
@@ -158,27 +183,8 @@ async def dashboard_view(request: Request):
         return RedirectResponse(url="/", status_code=303)
     return get_html_template("dashboard")
 
-@app.post("/api/admin/sync_backup")
-async def sync_backup_keys(request: Request, data: dict):
-    """
-    Self-healing pipeline endpoint. Receives client-side device persistent storage keys
-    and updates the active Vercel server memory dynamically whenever a dashboard drops sync.
-    """
-    global API_KEYS
-    auth = request.cookies.get("session_auth")
-    if auth != "authenticated_securely":
-        return JSONResponse(status_code=401, content={"error": "Unauthorized"})
-    
-    client_keys = data.get("keys", {})
-    if isinstance(client_keys, dict) and client_keys:
-        for k, v in client_keys.items():
-            if k not in API_KEYS:
-                API_KEYS[k] = v
-    return {"status": "synchronized", "total_keys": len(API_KEYS)}
-
 @app.post("/keys/generate")
 async def generate_key(request: Request):
-    global API_KEYS
     auth = request.cookies.get("session_auth")
     if auth != "authenticated_securely":
         raise HTTPException(status_code=401)
@@ -193,7 +199,8 @@ async def generate_key(request: Request):
     if not selected_tools or "all" in selected_tools:
         selected_tools = ["all"]
     
-    API_KEYS[custom_key] = {
+    active_keys = load_persistent_keys()
+    active_keys[custom_key] = {
         "name": custom_name,
         "expires_at": time.time() + (86400 * duration_days),
         "daily_limit": limit,
@@ -202,27 +209,11 @@ async def generate_key(request: Request):
         "status": "active",
         "created_at": time.time()
     }
-    # Pass execution back to the client interface so it writes directly to LocalStorage immediately
-    return HTMLResponse(f"""
-    <script>
-        let localBackup = JSON.parse(localStorage.getItem('shayan_backup_keys') || '{{}}');
-        localBackup["{custom_key}"] = {{
-            "name": "{custom_name}",
-            "expires_at": {time.time() + (86400 * duration_days)},
-            "daily_limit": {limit},
-            "used_today": 0,
-            "allowed_tools": {json.dumps(selected_tools)},
-            "status": "active",
-            "created_at": {time.time()}
-        }};
-        localStorage.setItem('shayan_backup_keys', JSON.stringify(localBackup));
-        window.location.href = "/dashboard";
-    </script>
-    """)
+    save_persistent_keys(active_keys)
+    return RedirectResponse(url="/dashboard", status_code=303)
 
 @app.post("/api/admin/action")
 async def admin_action(request: Request, data: dict):
-    global API_KEYS
     auth = request.cookies.get("session_auth")
     if auth != "authenticated_securely":
         return JSONResponse(status_code=401, content={"error": "Unauthorized"})
@@ -230,14 +221,16 @@ async def admin_action(request: Request, data: dict):
     action = data.get("action")
     target_key = data.get("key")
     
-    if target_key in API_KEYS:
+    active_keys = load_persistent_keys()
+    if target_key in active_keys:
         if action == "restart":
-            API_KEYS[target_key]["used_today"] = 0
+            active_keys[target_key]["used_today"] = 0
         elif action == "suspend":
-            API_KEYS[target_key]["status"] = "suspended" if API_KEYS[target_key].get("status") != "suspended" else "active"
+            active_keys[target_key]["status"] = "suspended" if active_keys[target_key].get("status") != "suspended" else "active"
         elif action == "delete":
-            del API_KEYS[target_key]
-        return {"status": "success", "action": action, "key": target_key}
+            del active_keys[target_key]
+        save_persistent_keys(active_keys)
+        return {"status": "success"}
     return JSONResponse(status_code=444, content={"error": "Key not found"})
 
 @app.get("/api/admin/data")
@@ -245,7 +238,8 @@ async def get_admin_data(request: Request):
     auth = request.cookies.get("session_auth")
     if auth != "authenticated_securely":
         return JSONResponse(status_code=401, content={"error": "Unauthorized"})
-    return {"keys": API_KEYS, "logs": LOGS, "endpoints": ENDPOINTS}
+    active_keys = load_persistent_keys()
+    return {"keys": active_keys, "logs": LOGS, "endpoints": ENDPOINTS}
 
 def get_html_template(page: str):
     if page == "login":
@@ -440,18 +434,6 @@ def get_html_template(page: str):
 
                 async function executeAction(action, key) {
                     if (action === 'delete' && !confirm('Confirm terminal wipe for this license?')) return;
-                    
-                    // First execute local update to match server side intent
-                    let localBackup = JSON.parse(localStorage.getItem('shayan_backup_keys') || '{}');
-                    if (action === 'delete') {
-                        delete localBackup[key];
-                    } else if (action === 'suspend') {
-                        if(localBackup[key]) localBackup[key].status = localBackup[key].status === 'suspended' ? 'active' : 'suspended';
-                    } else if (action === 'restart') {
-                        if(localBackup[key]) localBackup[key].used_today = 0;
-                    }
-                    localStorage.setItem('shayan_backup_keys', JSON.stringify(localBackup));
-
                     const res = await fetch('/api/admin/action', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
@@ -462,23 +444,8 @@ def get_html_template(page: str):
 
                 async function loadDashboardMetrics() {
                     try {
-                        // Anti-Recycle Pipeline: Sync client-side device cache with backend serverless memory space
-                        let localBackup = JSON.parse(localStorage.getItem('shayan_backup_keys') || '{}');
-                        if (Object.keys(localBackup).length > 0) {
-                            await fetch('/api/admin/sync_backup', {
-                                method: 'POST',
-                                headers: {'Content-Type': 'application/json'},
-                                body: JSON.stringify({ keys: localBackup })
-                            });
-                        }
-
                         const response = await fetch('/api/admin/data');
                         const data = await response.json();
-                        
-                        // Overwrite device cache with tracking increments processed from engine logs
-                        if (data.keys && Object.keys(data.keys).length > 0) {
-                            localStorage.setItem('shayan_backup_keys', JSON.stringify(data.keys));
-                        }
                         
                         if(Object.keys(storedEndpoints).length === 0) {
                             storedEndpoints = data.endpoints;
@@ -496,10 +463,10 @@ def get_html_template(page: str):
                         
                         const keysBody = document.getElementById('keys-table-body');
                         keysBody.innerHTML = '';
-                        for (const [key, details] of Object.entries(data.keys || localBackup)) {
+                        for (const [key, details] of Object.entries(data.keys)) {
                             let badgeStyle = "bg-gray-800 text-gray-300";
-                            let displayedScope = Array.isArray(details.allowed_tools) ? details.allowed_tools.join(', ') : "all";
-                            if(displayedScope.includes("all")) {
+                            let displayedScope = details.allowed_tools.join(', ');
+                            if(details.allowed_tools.includes("all")) {
                                 badgeStyle = "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20";
                                 displayedScope = "FULL ROOT";
                             }
@@ -523,7 +490,7 @@ def get_html_template(page: str):
 
                         const logsBody = document.getElementById('logs-table-body');
                         logsBody.innerHTML = '';
-                        if (!data.logs || data.logs.length === 0) {
+                        if (data.logs.length === 0) {
                             logsBody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-gray-600">No telemetry requests processed.</td></tr>`;
                         } else {
                             data.logs.slice().reverse().forEach(log => {
@@ -538,11 +505,11 @@ def get_html_template(page: str):
                             });
                         }
                     } catch (err) {
-                        console.error("Metrics Sync Fault Handling Loop:", err);
+                        console.error("Metrics Sync Loop Exception:", err);
                     }
                 }
                 
-                setInterval(loadDashboardMetrics, 3000);
+                setInterval(loadDashboardMetrics, 4000);
                 window.onload = loadDashboardMetrics;
             </script>
         </body>
