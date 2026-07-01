@@ -6,7 +6,7 @@ import hashlib
 from fastapi import FastAPI, Request, HTTPException, Form
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-app = FastAPI(title="SHAYAN_EXPLORER Gateway Ultimate Teleport Edition")
+app = FastAPI(title="SHAYAN_EXPLORER Ultimate Gateway Matrix")
 
 # 🛰️ PERMANENT DATASTORE REPOSITORY CLUSTER
 CLOUD_DB_URL = "https://kvbh.vercel.app/api/run/shayan_ultimate_v3_store"
@@ -23,23 +23,23 @@ TELEGRAM_CHANNELS = ["6624927068", "8505747325"]
 ADMIN_USER = "vernex"
 ADMIN_PASS = "vernex@ft"
 
-# 🎯 SYSTEM ROUTE INFRASTRUCTURE DIRECTORY
+# 🎯 SYSTEM ROUTE INFRASTRUCTURE DIRECTORY (ALL 28 CHANNELS)
 ENDPOINTS = {
     "adv": "num=9876543210", "paytm": "num=9876543210", "calltracer": "num=9876543210", "number": "num=9876543210",
-    "email": "email=airtel123@gmail.com", "numleak": "num=9876543210",
-    "aadhar": "num=[Aadhaar]", "adharfamily": "num=[Aadhaar]",
-    "upi": "upi=ex@ybl", "numtoupi": "num=8945996482", "ifsc": "ifsc=SBIN0001234", "pan": "pan=AXDPR2606K",
-    "pincode": "pin=110001", "ip": "ip=8.8.8.8",
+    "email": "email=airtel123@gmail.com", "numleak": "num=9876543210", "aadhar": "num=[Aadhaar]", 
+    "adharfamily": "num=[Aadhaar]", "upi": "upi=ex@ybl", "numtoupi": "num=8945996482", 
+    "ifsc": "ifsc=SBIN0001234", "pan": "pan=AXDPR2606K", "pincode": "pin=110001", "ip": "ip=8.8.8.8",
     "vehicle": "vehicle=KA01AB1234", "veh2num": "vehicle=KL41V3504", "challan": "vehicle=UP42BB2572",
     "ff": "uid=3143389983", "bgmi": "uid=5121439477", "snap": "username=priya",
-    "bomber": "number=9876543210&counter=100", "pk": "num=9876543210",
-    "insta": "username=cristiano", "git": "username=ftgamer2", "tg": "info=username", "tgidinfo": "id=7530266953"
+    "bomber": "number=9876543210&counter=100", "pk": "num=9876543210", "insta": "username=cristiano", 
+    "git": "username=ftgamer2", "tg": "info=username", "tgidinfo": "id=7530266953",
+    "gstin": "gst=07AAAAA1111A1Z1", "domain": "domain=google.com"
 }
 
 BASE_TARGET_URL = "https://ft-osint-api.duckdns.org/api"
 TARGET_KEY = "vx-osint"
 
-# Fail-safe structural dictionary to protect environment state during network spikes
+# Fixed default baseline configuration matching your tiered specifications
 DEFAULT_STRUCTURE = {
     "users": {},
     "api_keys": {
@@ -62,9 +62,9 @@ DEFAULT_STRUCTURE = {
         "snapchat": {"name": "👻 Snapchat Intelligence Node", "m1": 80, "m3": 200, "tools": ["snap"]},
         "bomber": {"name": "💣 SMS Bomber Layer", "m1": 150, "m3": 400, "tools": ["bomber"]},
         "pakistan": {"name": "🇵🇰 Pakistan Data Search", "m1": 100, "m3": 250, "tools": ["pk"]},
-        "bundle_starter": {"name": "🔥 Starter Pack Bundle", "m1": 500, "m3": 1300, "tools": ["adv", "paytm", "calltracer", "number", "aadhar", "adharfamily", "upi", "numtoupi", "pan", "ifsc", "pincode", "ip", "ff", "bgmi"]},
-        "bundle_pro": {"name": "🔥 Pro Pack Bundle", "m1": 1200, "m3": 3000, "tools": ["all_except_vehicle"]},
-        "bundle_ultimate": {"name": "🔥 Ultimate Pack Bundle", "m1": 1600, "m3": 4200, "tools": ["all"]}
+        "bundle_starter": {"name": "🔥 Starter Pack Bundle (5 APIs)", "m1": 500, "m3": 1300, "tools": ["adv", "paytm", "calltracer", "number", "git"]},
+        "bundle_pro": {"name": "🔥 Pro Pack Bundle (11 APIs)", "m1": 1200, "m3": 3000, "tools": ["adv", "paytm", "calltracer", "number", "git", "email", "numleak", "upi", "numtoupi", "pan", "ifsc"]},
+        "bundle_ultimate": {"name": "🔥 Ultimate Pack Bundle (All 28)", "m1": 1600, "m3": 4200, "tools": ["all"]}
     },
     "free_claims": {}
 }
@@ -75,9 +75,9 @@ def fetch_master_db():
         if res.status_code == 200:
             db = res.json()
             if isinstance(db, dict) and "api_keys" in db:
-                if "prices" in db and "pincode" in db["prices"]:
-                    db["prices"]["pincode"]["m1"] = 1
-                    db["prices"]["pincode"]["m3"] = 3
+                if "prices" not in db: db["prices"] = DEFAULT_STRUCTURE["prices"]
+                db["prices"]["pincode"]["m1"] = 1
+                db["prices"]["pincode"]["m3"] = 3
                 return db
         return DEFAULT_STRUCTURE
     except:
@@ -109,10 +109,8 @@ async def proxy_gateway(endpoint: str, request: Request):
     
     allowed = k_info["allowed_tools"]
     if "all" not in allowed:
-        if "all_except_vehicle" in allowed and endpoint in ["vehicle", "veh2num", "challan"]:
-            return JSONResponse(status_code=403, content={"error": "Pro Pack restriction"})
-        elif "all_except_vehicle" not in allowed and endpoint not in allowed:
-            return JSONResponse(status_code=403, content={"error": "No tool permission allocated"})
+        if endpoint not in allowed:
+            return JSONResponse(status_code=403, content={"error": "No tool permission allocated for this package tier"})
             
     db["api_keys"][user_key]["used_today"] += 1
     commit_master_db(db)
@@ -139,27 +137,17 @@ async def home_portal(request: Request):
             <a href="/dashboard" class="ml-auto text-[11px] uppercase bg-cyan-500 text-black px-2.5 py-1 font-bold rounded">Console Hub</a>
         </div>
         """
-        computed_trial_token = f"FREE-1HR-{hashlib.md5(uname.encode()).hexdigest()[:8].upper()}"
-        if computed_trial_token in db.get("api_keys", {}):
-            k_data = db["api_keys"][computed_trial_token]
-            if time.time() < k_data["expires_at"]:
-                free_api_banner = f"""
-                <div class="bg-gradient-to-r from-blue-600/20 to-cyan-600/20 border border-cyan-500/40 p-4 rounded-xl mb-6">
-                    <p class="text-xs font-mono font-black text-cyan-400 uppercase tracking-wide">🎁 YOUR FREE API KEY IS HERE:</p>
-                    <p class="text-sm font-mono text-white bg-black/50 p-2 rounded border border-gray-800 my-2 select-all font-bold tracking-wider text-center">{computed_trial_token}</p>
-                    <p class="text-[10px] text-gray-400 font-mono">🔒 Available Routes: <span class="text-white font-bold">📸 Instagram, 🐙 GitHub, ✈️ TG Username, 🆔 TG ID Info</span></p>
-                </div>
-                """
     else:
         user_header = """
         <div class="grid grid-cols-2 gap-3 mb-6">
             <a href="/login_view" class="text-center bg-white/5 border border-gray-800 text-white font-mono text-xs py-3 rounded-xl font-bold">Login</a>
-            <a href="/register_view" class="text-center bg-gradient-to-r from-cyan-500 to-blue-500 text-black font-mono text-xs py-3 rounded-xl font-bold">Register Account</a>
+            <a href="/register_view" class="text-center bg-gradient-to-r from-cyan-500 to-blue-500 text-black font-mono text-xs py-3 rounded-xl font-bold">Register</a>
         </div>
         """
         
     prices_source = db.get("prices", DEFAULT_STRUCTURE["prices"])
     js_prices = json.dumps(prices_source)
+    js_endpoints = json.dumps(list(ENDPOINTS.keys()))
     
     catalog_cards = ""
     for k, v in prices_source.items():
@@ -193,36 +181,87 @@ async def home_portal(request: Request):
         <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     </head>
     <body class="bg-[#06070c] text-gray-300 antialiased selection:bg-cyan-500 selection:text-black">
+        
+        <div class="max-w-md mx-auto px-4 pt-4 flex justify-between items-center">
+            <button onclick="openMailbox()" class="relative bg-black/50 border border-gray-800 p-2.5 rounded-xl text-gray-400 hover:text-cyan-400 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 19v-8.93a2 2 0 01.89-1.664l8-5.333a2 2 0 012.22 0l8 5.333A2 2 0 0121 10.07V19a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 10l9 6 9-6" />
+                </svg>
+                <div id="mailbox-dot" class="absolute top-1 right-1 w-2.5 h-2.5 bg-cyan-400 rounded-full hidden animate-ping"></div>
+            </button>
+
+            <button onclick="openApiDirectory()" class="bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/30 text-cyan-400 text-[11px] font-mono font-bold tracking-wide px-3 py-2 rounded-xl uppercase shadow-sm">
+                📁 View All 28 APIs
+            </button>
+        </div>
+
         <div class="max-w-md mx-auto p-4 min-h-screen pb-40">
-            <header class="text-center py-6 border-b border-gray-900 mb-6">
+            <header class="text-center py-4 border-b border-gray-900 mb-6">
                 <h1 class="text-xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 uppercase font-mono">SHAYAN_EXPLORER API</h1>
                 <p class="text-[10px] font-mono text-gray-500 tracking-wider uppercase mt-1">Advanced Real-Time Data Scraper Core Engine</p>
             </header>
 
             {user_header}
-            {free_api_banner}
 
             <h2 class="text-xs font-black text-cyan-400 uppercase tracking-widest mb-4 font-mono">🛒 DIGITAL API MARKET STORES</h2>
             <div class="space-y-3">{catalog_cards}</div>
         </div>
 
-        <div id="sticky-cart-bar" class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-[#0a0d14]/95 backdrop-blur border-t border-gray-800 p-4 rounded-t-2xl shadow-2xl hidden z-50">
+        <div id="sticky-cart-bar" class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-[#0a0d14]/95 backdrop-blur border-t border-gray-800 p-4 rounded-t-2xl shadow-2xl hidden z-40">
             <h3 class="text-xs font-black text-cyan-400 uppercase tracking-wider mb-2 font-mono">🧾 Digital Order Summary Details</h3>
             <div class="space-y-1 border-b border-gray-800/60 pb-2 mb-2 text-xs font-mono text-gray-400">
                 <div class="flex justify-between"><span>Base API Price Component:</span><span class="text-white" id="summary-base">₹0.00</span></div>
-                <div class="flex justify-between"><span>Platform Automation Fee:</span><span class="text-white" id="summary-platform">₹15.00</span></div>
-                <div class="flex justify-between"><span>Integrated GST Tax (18%):</span><span class="text-white" id="summary-gst">₹0.00</span></div>
+                <div class="flex justify-between" id="platform-row"><span>Platform Automation Fee:</span><span class="text-white" id="summary-platform">₹15.00</span></div>
+                <div class="flex justify-between" id="gst-row"><span>Integrated GST Tax (18%):</span><span class="text-white" id="summary-gst">₹0.00</span></div>
             </div>
             <div class="flex justify-between items-center mb-3">
                 <span class="text-xs font-black uppercase font-mono text-white">Total Billing Load:</span>
                 <span class="text-lg font-black text-emerald-400 font-mono" id="summary-grand">₹0.00</span>
             </div>
-            <button onclick="triggerCheckout('{uname if auth else ''}')" class="w-full py-3.5 bg-gradient-to-r from-cyan-400 to-blue-500 text-black font-mono font-black uppercase text-xs rounded-xl tracking-widest shadow-lg shadow-cyan-500/20">Authorize Real-time Payment</button>
+            <button onclick="triggerCheckout()" class="w-full py-3.5 bg-gradient-to-r from-cyan-400 to-blue-500 text-black font-mono font-black uppercase text-xs rounded-xl tracking-widest shadow-lg shadow-cyan-500/20">Authorize Real-time Payment</button>
+        </div>
+
+        <div id="api-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm hidden z-50 p-4 overflow-y-auto">
+            <div class="max-w-md mx-auto bg-[#0a0d14] border border-gray-800 rounded-2xl p-5 my-8 space-y-4">
+                <div class="flex justify-between items-center border-b border-gray-800 pb-2">
+                    <h3 class="text-xs font-black text-cyan-400 font-mono uppercase tracking-widest">📋 Complete 28 Core API Route Matrix</h3>
+                    <button onclick="closeApiDirectory()" class="text-gray-500 hover:text-white font-mono font-bold text-sm">✕</button>
+                </div>
+                <div class="space-y-2 max-h-[60vh] overflow-y-auto pr-1 text-[11px] font-mono">
+                    {"".join([f'<div class="bg-black/40 border border-gray-900 p-2.5 rounded-lg"><p class="text-emerald-400 font-bold">GET /api/{k}</p><p class="text-gray-500 text-[10px] mt-0.5">Payload Schema: {v}</p></div>' for k, v in ENDPOINTS.items()])}
+                </div>
+                <button onclick="closeApiDirectory()" class="w-full py-2.5 bg-white/5 border border-gray-800 text-white font-mono font-bold uppercase text-[11px] rounded-xl">Dismiss Matrix View</button>
+            </div>
+        </div>
+
+        <div id="mailbox-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm hidden z-50 p-4 flex items-center justify-center">
+            <div class="max-w-md w-full bg-[#0d111a] border border-cyan-500/30 rounded-2xl p-6 space-y-4 shadow-2xl shadow-cyan-500/5">
+                <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="text-cyan-400">📥</span>
+                        <h3 class="text-xs font-black text-white font-mono uppercase tracking-wider">Secure Delivery Mailbox</h3>
+                    </div>
+                    <button onclick="closeMailbox()" class="text-gray-500 hover:text-white font-mono font-bold text-sm">✕</button>
+                </div>
+                <div id="mailbox-content" class="text-xs font-mono text-gray-400 leading-relaxed bg-black/40 p-4 rounded-xl border border-gray-900 min-h-[120px] flex items-center justify-center text-center">
+                    No new letters or license transmissions found. New keys appear instantly upon successful real-time payment authentication.
+                </div>
+                <button onclick="closeMailbox()" class="w-full py-2.5 bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 text-cyan-400 font-mono font-bold uppercase text-[11px] rounded-xl">Close Mailbox</button>
+            </div>
         </div>
 
         <script>
             const corePrices = {js_prices};
             let activeCart = [];
+
+            function openApiDirectory() {{ document.getElementById('api-modal').classList.remove('hidden'); }}
+            function closeApiDirectory() {{ document.getElementById('api-modal').classList.add('hidden'); }}
+            function openMailbox() {{ 
+                document.getElementById('mailbox-modal').classList.remove('hidden'); 
+                document.getElementById('mailbox-dot').classList.add('hidden');
+            }}
+            function closeMailbox() {{ document.getElementById('mailbox-modal').classList.add('hidden'); }}
 
             function toggleCartItem(apiId) {{
                 const idx = activeCart.indexOf(apiId);
@@ -253,6 +292,18 @@ async def home_portal(request: Request):
                     totalBase += corePrices[item][selectedHorizon];
                 }});
 
+                // Check if user is ONLY purchasing the pincode tool
+                if (activeCart.length === 1 && activeCart[0] === 'pincode') {{
+                    document.getElementById('platform-row').classList.add('hidden');
+                    document.getElementById('gst-row').classList.add('hidden');
+                    document.getElementById('summary-base').innerText = '₹' + totalBase + '.00';
+                    document.getElementById('summary-grand').innerText = '₹' + totalBase + '.00';
+                    return;
+                }}
+
+                document.getElementById('platform-row').classList.remove('hidden');
+                document.getElementById('gst-row').classList.remove('hidden');
+
                 const platformFee = 15;
                 const gstComponent = Math.round((totalBase + platformFee) * 0.18);
                 const grandTotal = totalBase + platformFee + gstComponent;
@@ -263,12 +314,9 @@ async def home_portal(request: Request):
                 document.getElementById('summary-grand').innerText = '₹' + grandTotal + '.00';
             }}
 
-            async function triggerCheckout(currentSessionUser) {{
-                let username = currentSessionUser;
-                if (!username) {{
-                    username = prompt("Please provide your registered account Username target to bind the purchased license key:");
-                    if (!username) return alert("Operation rejected. Identity binding required.");
-                }}
+            async function triggerCheckout() {{
+                let username = prompt("Enter your registered operator Username to map the license:");
+                if (!username) return alert("Operation canceled.");
 
                 let totalBase = 0;
                 let descriptionPayload = [];
@@ -279,16 +327,22 @@ async def home_portal(request: Request):
                     descriptionPayload.push(`${{item}} (${{horizon}})`);
                 }});
 
-                const platformFee = 15;
-                const gstComponent = Math.round((totalBase + platformFee) * 0.18);
-                const grandTotal = totalBase + platformFee + gstComponent;
+                let platformFee = 15;
+                let gstComponent = Math.round((totalBase + platformFee) * 0.18);
+                let grandTotal = totalBase + platformFee + gstComponent;
+
+                if (activeCart.length === 1 && activeCart[0] === 'pincode') {{
+                    platformFee = 0;
+                    gstComponent = 0;
+                    grandTotal = totalBase;
+                }}
 
                 var options = {{
                     "key": "{RAZORPAY_KEY_ID}",
                     "amount": grandTotal * 100,
                     "currency": "INR",
                     "name": "SHAYAN_EXPLORER CLOUD",
-                    "description": "Cart: " + descriptionPayload.join(' + '),
+                    "description": "Cart Transaction: " + descriptionPayload.join(', '),
                     "handler": async function (response) {{
                         const verifyResponse = await fetch('/api/payment/process_cart', {{
                             method: 'POST',
@@ -307,10 +361,31 @@ async def home_portal(request: Request):
                         }});
                         const resData = await verifyResponse.json();
                         if (resData.status === 'success') {{
-                            alert("Payment Verified! Your Active License Token has been deployed directly into your Console History Profile!");
-                            window.location.href = "/dashboard";
+                            // In-App Mailbox Letter Injection
+                            document.getElementById('mailbox-dot').classList.remove('hidden');
+                            document.getElementById('mailbox-content').innerHTML = `
+                                <div class="space-y-3 text-left">
+                                    <p class="text-cyan-400 font-bold uppercase text-[10px] border-b border-gray-800 pb-1">✉️ OFFICIAL DELIVERY TRANSACTION INVOICE</p>
+                                    <p>Dear <span class="text-white font-bold">${{username}}</span>,</p>
+                                    <p>We have successfully recognized your settled invoice load of <span class="text-emerald-400 font-bold">₹${{grandTotal}}.00</span> via transaction pointer reference: <span class="text-white select-all font-mono">${{response.razorpay_payment_id}}</span>.</p>
+                                    <div class="bg-black/60 p-2.5 rounded border border-gray-800 space-y-1">
+                                        <p class="text-gray-500 text-[10px]">PROVISIONED LICENSE ROUTE ACCESS KEY:</p>
+                                        <p class="text-white font-black tracking-widest text-center text-sm select-all">${{resData.generated_key}}</p>
+                                    </div>
+                                    <p class="text-[10px] text-gray-500 italic">Thank you for deploying with SHAYAN_EXPLORER core networks.</p>
+                                </div>
+                            `;
+                            alert("Payment processed! A confirmation letter containing your API token has dropped into your mailbox icon at the top left corner.");
+                            
+                            // Clear cart interface state
+                            activeCart = [];
+                            document.querySelectorAll('button[id^="btn_"]').forEach(b => {{
+                                b.className = "w-full bg-white/5 border border-gray-800 text-gray-300 font-mono text-xs py-2 rounded font-bold uppercase transition-all";
+                                b.innerText = "Add to Cart";
+                            }});
+                            calculateCart();
                         }} else {{
-                            alert("Infrastructure deployment anomaly.");
+                            alert("Infrastructure delivery deployment error.");
                         }}
                     }},
                     "prefill": {{ "name": username }},
@@ -344,32 +419,39 @@ async def process_cart_webhook_callback(data: dict):
         horizon = item["horizon"]
         if i_id in prices_ref:
             cfg = prices_ref[i_id]
-            aggregated_tools.extend(cfg["tools"])
             days = 30 if horizon == "m1" else 90
             if days > max_days: max_days = days
             purchased_labels.append(f"{cfg['name']} ({'1 Month' if horizon=='m1' else '3 Months'})")
             
+            # Explicit package expansion validation rules
+            if i_id == "bundle_starter":
+                aggregated_tools.extend(prices_ref["bundle_starter"]["tools"])
+            elif i_id == "bundle_pro":
+                aggregated_tools.extend(prices_ref["bundle_pro"]["tools"])
+            elif i_id == "bundle_ultimate":
+                aggregated_tools.append("all")
+            else:
+                aggregated_tools.extend(cfg["tools"])
+            
     allocated_key = f"SHAYAN-{hashlib.md5(str(time.time()).encode()).hexdigest()[:12].upper()}"
     db["api_keys"][allocated_key] = {
-        "name": f"{username} - Purchased Bundle",
+        "name": f"{username} - Active License",
         "expires_at": time.time() + (86400 * max_days),
-        "daily_limit": 2500, "used_today": 0,
+        "daily_limit": 5000, "used_today": 0,
         "allowed_tools": list(set(aggregated_tools)), "status": "active"
     }
     commit_master_db(db)
     
     alert_msg = (
-        f"💰 *A PERSON BUY AN API*\n\n"
-        f"👤 *Subscriber Username:* `{username}`\n"
+        f"💰 *NEW GATEWAY ACCOUNT PURCHASE EVENT*\n\n"
+        f"👤 *Subscriber Username Target:* `{username}`\n"
         f"📦 *Purchased Catalog:* \n" + "\n".join([f"• _{lbl}_" for lbl in purchased_labels]) + f"\n\n"
         f"📊 *Billing Invoice Breakdown:* \n"
-        f"└ Base Rate: ₹{base_fee}.00\n"
-        f"└ Platform Charge: ₹15.00\n"
-        f"└ GST Tax (18%): ₹{gst}.00\n"
-        f"💰 *Total Settlement:* `₹{grand}.00` Paid\n\n"
+        f"└ Base Component Rate: ₹{base_fee}.00\n"
+        f"└ Total Collected Premium: `₹{grand}.00` Paid\n\n"
         f"🔑 *Provisioned Token Key:* `{allocated_key}`\n"
-        f"🧾 *Transaction ID:* `{payment_id}`\n\n"
-        f"⚙️ _SHAYAN_EXPLORER Cluster Network Status: Balanced_"
+        f"🧾 *Transaction ID Reference:* `{payment_id}`\n\n"
+        f"⚙️ _SHAYAN_EXPLORER Cluster Network Status: Active and Healthy_"
     )
     send_telegram_alert(alert_msg)
     return {"status": "success", "generated_key": allocated_key}
@@ -467,17 +549,6 @@ async def dashboard_view(request: Request):
                 <button type="submit" class="w-full py-2 bg-red-500 text-black font-bold text-xs rounded uppercase font-mono">Generate Ultimate License</button>
             </form>
         </section>
-        <section class="p-4 rounded-xl bg-black/40 border border-cyan-500/10 mb-4 space-y-3">
-            <h2 class="text-xs font-black text-cyan-400 uppercase tracking-wider font-mono">🛠️ Core API Price Engine Configuration</h2>
-            <form action="/api/admin/modify_price" method="POST" class="space-y-3">
-                <select name="api_id" class="w-full bg-black/60 border border-gray-800 p-2 rounded text-xs text-white">
-        """ + "".join([f'<option value="{k}">{v["name"]}</option>' for k, v in prices_ref.items()]) + """
-                </select>
-                <input type="number" name="m1" placeholder="New 1-Mo Base Price" required class="w-full bg-black/60 border border-gray-800 p-2 rounded text-xs text-white">
-                <input type="number" name="m3" placeholder="New 3-Mo Base Price" required class="w-full bg-black/60 border border-gray-800 p-2 rounded text-xs text-white">
-                <button type="submit" class="w-full py-2 bg-cyan-500 text-black font-bold text-xs rounded uppercase font-mono">Modify Catalog Item Record</button>
-            </form>
-        </section>
         """
 
     key_history_rows_html = ""
@@ -518,7 +589,7 @@ async def dashboard_view(request: Request):
         </div>
         <script>
             async function fireAction(action, key) {{
-                if(!confirm('Execute authorization state override command?')) return;
+                if(!confirm('Execute authorization command override?')) return;
                 const res = await fetch('/api/admin/action', {{
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
@@ -539,15 +610,6 @@ async def admin_forge_key(custom_name: str = Form(...), custom_key: str = Form(.
         "daily_limit": limit, "used_today": 0, "allowed_tools": ["all"], "status": "active"
     }
     commit_master_db(db)
-    return RedirectResponse(url="/dashboard", status_code=303)
-
-@app.post("/api/admin/modify_price")
-async def modify_price_endpoint(api_id: str = Form(...), m1: int = Form(...), m3: int = Form(...)):
-    db = fetch_master_db()
-    if "prices" in db and api_id in db["prices"]:
-        db["prices"][api_id]["m1"] = m1
-        db["prices"][api_id]["m3"] = m3
-        commit_master_db(db)
     return RedirectResponse(url="/dashboard", status_code=303)
 
 @app.post("/api/admin/action")
