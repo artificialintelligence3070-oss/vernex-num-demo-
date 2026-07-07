@@ -1,598 +1,558 @@
 import os
-import time
 import uuid
-import requests
-from flask import Flask, request, jsonify, redirect, url_for, session, render_template_string
+import httpx
+from datetime import datetime
+from typing import List, Optional
+from fastapi import FastAPI, Request, Form, HTTPException, status, Cookie
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 
-app = Flask(__name__)
-app.secret_key = "shayan_explorer_ultra_secure_glow_vault"
+app = FastAPI(title="SHAYAN_EXPLORER Gateway Platform")
 
-# Admin Authentication credentials
+# --- CORE ARCHITECTURE GLOBAL INITIALIZATION ---
+DEVELOPER_NAME = "SHAYAN_EXPLORER"
+UPSTREAM_API_BASE = "https://ft-osint-api.duckdns.org/api"
+UPSTREAM_MASTER_KEY = "vernex-6a9dc4fdd5923c40b0aba27bf1e39e3f"
+
 ADMIN_USER = "vernex"
 ADMIN_PASS = "vernex@16vx"
+SESSION_TOKEN = "vx_session_secure_token_2026"
 
-# In-memory storage structures
-API_KEYS = {}
+AVAILABLE_TOOLS = ["adv", "paytm", "imei", "calltracer", "upi", "ifsc", "number", "pincode", "ip", "challan", "ff", "bgmi", "snap", "email", "vehicle", "git", "insta", "tg", "tgidinfo", "numleak"]
+
+# Static in-memory database simulation
+API_KEYS_DB = {
+    "VERNEX-DEMO-TOKEN": {
+        "name": "Default Tester Profile",
+        "limit": 2500,
+        "used": 0,
+        "expiry": "2026-12-31T23:59",
+        "tools": ["all"],
+        "status": "Active"
+    }
+}
 REQUEST_LOGS = []
 
-# Map of supported service modules (20 Features)
-TARGET_APIS = {
-    "adv": "https://ft-osint-api.duckdns.org/api/adv",
-    "paytm": "https://ft-osint-api.duckdns.org/api/paytm",
-    "imei": "https://ft-osint-api.duckdns.org/api/imei",
-    "calltracer": "https://ft-osint-api.duckdns.org/api/calltracer",
-    "upi": "https://ft-osint-api.duckdns.org/api/upi",
-    "ifsc": "https://ft-osint-api.duckdns.org/api/ifsc",
-    "number": "https://ft-osint-api.duckdns.org/api/number",
-    "pincode": "https://ft-osint-api.duckdns.org/api/pincode",
-    "ip": "https://ft-osint-api.duckdns.org/api/ip",
-    "challan": "https://ft-osint-api.duckdns.org/api/challan",
-    "ff": "https://ft-osint-api.duckdns.org/api/ff",
-    "bgmi": "https://ft-osint-api.duckdns.org/api/bgmi",
-    "snap": "https://ft-osint-api.duckdns.org/api/snap",
-    "email": "https://ft-osint-api.duckdns.org/api/email",
-    "vehicle": "https://ft-osint-api.duckdns.org/api/vehicle",
-    "git": "https://ft-osint-api.duckdns.org/api/git",
-    "insta": "https://ft-osint-api.duckdns.org/api/insta",
-    "tg": "https://ft-osint-api.duckdns.org/api/tg",
-    "tgidinfo": "https://ft-osint-api.duckdns.org/api/tgidinfo",
-    "numleak": "https://ft-osint-api.duckdns.org/api/numleak"
-}
+# --- SECURITY HANDSHAKE UTILITIES ---
+def is_authenticated(session: Optional[str] = Cookie(None)) -> bool:
+    return session == SESSION_TOKEN
 
-UPSTREAM_TOKEN = "vernex-6a9dc4fdd5923c40b0aba27bf1e39e3f"
-
-# Embedded Responsive 3D Cyber Dashboard UI
-DASHBOARD_HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SHAYAN_EXPLORER | Command Core</title>
-    <style>
-        :root {
-            --bg-base: #06060e;
-            --bg-surface: #0b0f19;
-            --neon-glow: #00d2ff;
-            --neon-dim: rgba(0, 210, 255, 0.15);
-            --border-color: #1e293b;
-            --text-main: #f1f5f9;
-        }
-        body {
-            background-color: var(--bg-base);
-            color: var(--text-main);
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            margin: 0;
-            padding: 0;
-        }
-        header {
-            background: var(--bg-surface);
-            padding: 1rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 2px solid var(--neon-glow);
-            box-shadow: 0 0 15px var(--neon-dim);
-        }
-        header h1 {
-            margin: 0;
-            font-size: 1.4rem;
-            letter-spacing: 2px;
-            color: var(--neon-glow);
-            text-shadow: 0 0 8px var(--neon-glow);
-        }
-        .logout-btn {
-            padding: 0.5rem 1rem;
-            background: transparent;
-            border: 1px solid #ef4444;
-            color: #ef4444;
-            border-radius: 4px;
-            text-decoration: none;
-            font-weight: bold;
-            transition: 0.3s;
-        }
-        .logout-btn:hover {
-            background: #ef4444;
-            color: #fff;
-            box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
-        }
-        .container {
-            max-width: 1400px;
-            margin: 2rem auto;
-            padding: 0 1rem;
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 2rem;
-        }
-        @media(min-width: 992px) {
-            .container { grid-template-columns: 1fr 2fr; }
-        }
-        .panel-card {
-            background: var(--bg-surface);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 1.5rem;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.7);
-            transform: perspective(800px) rotateX(1deg);
-            transition: transform 0.4s, border-color 0.4s, box-shadow 0.4s;
-        }
-        .panel-card:hover {
-            transform: perspective(800px) rotateX(0deg) scale(1.01);
-            border-color: var(--neon-glow);
-            box-shadow: 0 0 20px var(--neon-dim);
-        }
-        h2 {
-            margin-top: 0;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 0.5rem;
-            color: var(--neon-glow);
-            font-size: 1.15rem;
-            text-shadow: 0 0 5px var(--neon-dim);
-        }
-        label {
-            display: block;
-            margin: 0.8rem 0 0.3rem 0;
-            font-size: 0.85rem;
-            opacity: 0.85;
-        }
-        input[type="text"], input[type="number"], select {
-            width: 100%;
-            padding: 10px;
-            background: #090d16;
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-            color: #fff;
-            box-sizing: border-box;
-        }
-        input:focus, select:focus {
-            outline: none;
-            border-color: var(--neon-glow);
-        }
-        .checkbox-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-            gap: 0.5rem;
-            margin-top: 0.5rem;
-            max-height: 140px;
-            overflow-y: auto;
-            padding: 0.5rem;
-            background: #090d16;
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-        }
-        .checkbox-item { display: flex; align-items: center; font-size: 0.8rem; }
-        .checkbox-item input { margin-right: 5px; }
-        .action-submit {
-            width: 100%;
-            padding: 12px;
-            background: linear-gradient(135deg, #00d2ff, #0066cc);
-            border: none;
-            color: white;
-            font-weight: bold;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-top: 1rem;
-            transition: 0.3s;
-        }
-        .action-submit:hover {
-            filter: brightness(1.2);
-            box-shadow: 0 0 12px var(--neon-glow);
-        }
-        .quick-copy-area {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-            gap: 0.6rem;
-            margin-bottom: 1.5rem;
-        }
-        .copy-pill {
-            background: #090d16;
-            border: 1px dashed var(--neon-glow);
-            padding: 8px 12px;
-            border-radius: 4px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 0.8rem;
-            cursor: pointer;
-            transition: 0.2s;
-        }
-        .copy-pill:hover {
-            background: var(--neon-dim);
-            transform: translateY(-1px);
-        }
-        .table-wrapper {
-            overflow-x: auto;
-            margin-top: 1rem;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            text-align: left;
-            font-size: 0.85rem;
-        }
-        th, td {
-            padding: 12px;
-            border-bottom: 1px solid var(--border-color);
-        }
-        th { background: #090d16; color: var(--neon-glow); }
-        .badge {
-            padding: 3px 6px;
-            border-radius: 3px;
-            font-size: 0.75rem;
-            font-weight: bold;
-        }
-        .badge-active { background: rgba(34, 197, 94, 0.15); color: #22c55e; border: 1px solid #22c55e; }
-        .badge-suspended { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid #ef4444; }
-        .mini-form { display: inline-block; margin: 0 2px; }
-        .btn-mini {
-            padding: 4px 8px;
-            font-size: 0.75rem;
-            border-radius: 3px;
-            cursor: pointer;
-            border: 1px solid var(--border-color);
-            background: #0f172a;
-            color: #fff;
-            transition: 0.2s;
-        }
-        .btn-mini:hover { border-color: var(--neon-glow); color: var(--neon-glow); }
-        .log-terminal {
-            background: #040408;
-            border: 1px solid #1e293b;
-            font-family: monospace;
-            padding: 1rem;
-            border-radius: 6px;
-            max-height: 250px;
-            overflow-y: auto;
-            font-size: 0.8rem;
-            color: #38bdf8;
-        }
-        .log-line { margin-bottom: 0.4rem; border-left: 2px solid var(--neon-glow); padding-left: 6px; }
-    </style>
-</head>
-<body>
-
-<header>
-    <h1>SHAYAN_EXPLORER OSINT CORE v3</h1>
-    <a href="/logout" class="logout-btn">DISCONNECT Engine</a>
-</header>
-
-<div class="container">
-    <div style="display: flex; flex-direction: column; gap: 2rem;">
-        <div class="panel-card">
-            <h2>Generate Allocation Token</h2>
-            <form action="/api/v1/generate-key" method="POST">
-                <label>User Identifier / Description</label>
-                <input type="text" name="name" placeholder="Client Tracking Label" required autocomplete="off">
-                
-                <label>Total Global Requests Counter Limit</label>
-                <input type="number" name="limit" value="1000" required>
-                
-                <label>Lifespan Span Interval</label>
-                <select name="duration_days" id="gen_duration">
-                    <option value="lifetime">Unlimited Lifetime Route</option>
-                    <option value="1">24 Hours (1 Day)</option>
-                    <option value="2">48 Hours (2 Days)</option>
-                    <option value="7">1 Week</option>
-                    <option value="30">30 Days</option>
-                </select>
-                
-                <label>Allowed Features Assignment Scope</label>
-                <select name="scope_type" id="gen_scope" onchange="toggleScopeGrid()">
-                    <option value="all">Grant All 20 Active Tools</option>
-                    <option value="custom">Custom Specified Tool Scope Selection</option>
-                </select>
-                
-                <div class="checkbox-grid" id="gen_apis_grid" style="display:none;">
-                    {% for feat in features %}
-                    <div class="checkbox-item">
-                        <input type="checkbox" name="apis" value="{{ feat }}" id="gen_feat_{{ feat }}">
-                        <label style="display:inline; margin:0;" for="gen_feat_{{ feat }}">{{ feat }}</label>
-                    </div>
-                    {% endfor %}
-                </div>
-                
-                <button type="submit" class="action-submit">Forge Access Token</button>
-            </form>
-        </div>
-        
-        <div class="panel-card">
-            <h2>Live Request System Logs</h2>
-            <div class="log-terminal">
-                {% if logs %}
-                    {% for log in logs %}
-                    <div class="log-line">
-                        [{{ log.timestamp }}] {{ log.name }} -> {{ log.endpoint }} | {{ log.query }}
-                    </div>
-                    {% endfor %}
-                {% else %}
-                    <div style="color:#64748b;">No active query streams hitting the application layer...</div>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-
-    <div style="display: flex; flex-direction: column; gap: 2rem;">
-        <div class="panel-card">
-            <h2>1-Click Endpoint Route Copy Toolkit (Without Key Element Base)</h2>
-            <div class="quick-copy-area">
-                {% for feat in features %}
-                <div class="copy-pill" onclick="copyEndpointRoute('{{ feat }}')">
-                    <span>/api/{{ feat }}</span>
-                    <span style="font-size:0.7rem; color:var(--neon-glow);">[COPY]</span>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-
-        <div class="panel-card">
-            <h2>Active Keys Registry State Management Matrix</h2>
-            <div class="table-wrapper">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>User Target</th>
-                            <th>Active Token Pattern</th>
-                            <th>Usage Progress</th>
-                            <th>Lifespan Deadline Status</th>
-                            <th>Operational State</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% if keys %}
-                            {% for token, details in keys.items() %}
-                            <tr>
-                                <td><strong>{{ details.name }}</strong></td>
-                                <td style="color:var(--neon-glow); font-family:monospace;">{{ token }}</td>
-                                <td>{{ details.req_count }} / {{ details.limit }}</td>
-                                <td>
-                                    {% if details.lifetime %}
-                                        <span style="color:#a855f7;">LIFETIME</span>
-                                    {% else %}
-                                        <span class="time-countdown" data-expire="{{ details.expires_at }}">Calculating</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% if details.status == 'active' %}
-                                        <span class="badge badge-active">ONLINE</span>
-                                    {% else %}
-                                        <span class="badge badge-suspended">SUSPENDED</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <form action="/api/v1/action-key" method="POST" class="mini-form">
-                                        <input type="hidden" name="token" value="{{ token }}">
-                                        {% if details.status == 'active' %}
-                                        <input type="hidden" name="operation" value="suspend">
-                                        <button type="submit" class="btn-mini" style="color:#f97316;">Suspend</button>
-                                        {% else %}
-                                        <input type="hidden" name="operation" value="unsuspend">
-                                        <button type="submit" class="btn-mini" style="color:#22c55e;">Activate</button>
-                                        {% endif %}
-                                    </form>
-                                    <form action="/api/v1/action-key" method="POST" class="mini-form" onsubmit="return confirm('Confirm token deletion workflow?');">
-                                        <input type="hidden" name="token" value="{{ token }}">
-                                        <input type="hidden" name="operation" value="delete">
-                                        <button type="submit" class="btn-mini" style="color:#ef4444;">Delete</button>
-                                    </form>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        {% else %}
-                            <tr>
-                                <td colspan="6" style="text-align:center; color:#64748b; padding:2rem;">No active generation tracking patterns instantiated within application pool.</td>
-                            </tr>
-                        {% endif %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-</div>
-
-<script>
-    function toggleScopeGrid() {
-        const val = document.getElementById('gen_scope').value;
-        const grid = document.getElementById('gen_apis_grid');
-        grid.style.display = (val === 'custom') ? 'grid' : 'none';
-    }
-
-    function copyEndpointRoute(endpoint) {
-        const host = window.location.origin;
-        const fullUrl = `${host}/api/${endpoint}?key=YOUR_KEY&num=`;
-        navigator.clipboard.writeText(fullUrl).then(() => {
-            alert(`Copied layout design context: /api/${endpoint}`);
-        });
-    }
-
-    function updateCountdowns() {
-        const now = Math.floor(Date.now() / 1000);
-        document.querySelectorAll('.time-countdown').forEach(el => {
-            const expireEpoch = parseInt(el.getAttribute('data-expire'));
-            if (!isNaN(expireEpoch)) {
-                const diff = expireEpoch - now;
-                if (diff <= 0) {
-                    el.textContent = "EXPIRED";
-                    el.style.color = "#ef4444";
-                } else {
-                    const hrs = Math.floor(diff / 3600);
-                    const mins = Math.floor((diff % 3600) / 60);
-                    el.textContent = `${hrs}h ${mins}m left`;
-                    el.style.color = "#22c55e";
-                }
-            }
-        });
-    }
-    setInterval(updateCountdowns, 1000);
-    updateCountdowns();
-</script>
-</body>
-</html>
-"""
-
-def evaluate_key_status(key_string):
-    if key_string not in API_KEYS:
-        return {"valid": False, "reason": "The key is invalid. Please buy a new key."}
+# --- SAFE PROXY CONDUIT ---
+@app.get("/api/{tool_name}")
+async def proxy_gateway(tool_name: str, request: Request):
+    params = dict(request.query_params)
+    client_key = params.get("key")
     
-    key_data = API_KEYS[key_string]
-    if key_data.get("status") == "suspended":
-        return {"valid": False, "reason": "The key is suspended by admin."}
+    # Absolute protection structure preventing internal runtime crashes
+    if not client_key or client_key not in API_KEYS_DB:
+        return JSONResponse(status_code=403, content={"status": "failed", "error": "Unauthorized Access. Invalid API Key."})
         
-    if not key_data.get("lifetime", False):
-        if time.time() > key_data.get("expires_at", 0):
-            return {"valid": False, "reason": "The key is expired. Please buy a new key."}
-            
-    if key_data.get("req_count", 0) >= key_data.get("limit", 0):
-        return {"valid": False, "reason": "Request limit reached for this key token."}
+    key_profile = API_KEYS_DB[client_key]
+    
+    if key_profile["status"] == "Suspended":
+        return JSONResponse(status_code=403, content={"status": "failed", "error": "This access profile has been explicitly suspended."})
         
-    return {"valid": True, "data": key_data}
+    if key_profile["expiry"] != "Lifetime":
+        try:
+            expiry_dt = datetime.fromisoformat(key_profile["expiry"])
+            if datetime.now() > expiry_dt:
+                key_profile["status"] = "Suspended" # Automatically drop status context on verification pass
+                return JSONResponse(status_code=403, content={"status": "failed", "error": "This allocation key has hit its lifecycle limit and expired."})
+        except Exception:
+            return JSONResponse(status_code=500, content={"status": "failed", "error": "Key validation parse mismatch anomaly encountered."})
 
-@app.route('/')
-def home_redirect():
-    if session.get('logged_in'):
-        return redirect(url_for('dashboard_panel'))
-    return redirect(url_for('login_panel'))
+    if key_profile["used"] >= key_profile["limit"]:
+        return JSONResponse(status_code=429, content={"status": "failed", "error": "Volumetric threshold usage capacity exhausted for today."})
 
-@app.route('/login', methods=['GET', 'POST'])
-def login_panel():
-    msg = None
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        if username == ADMIN_USER and password == ADMIN_PASS:
-            session['logged_in'] = True
-            return redirect(url_for('dashboard_panel'))
-        else:
-            msg = "Invalid authorization credentials."
-    return f'''
+    if "all" not in key_profile["tools"] and tool_name not in key_profile["tools"]:
+        return JSONResponse(status_code=403, content={"status": "failed", "error": f"Token lack clearance context metrics for target sub-utility tool module: [{tool_name}]."})
+
+    # Trace contextual queries
+    parsed_queries = ", ".join([f"{k}={v}" for k, v in params.items() if k != "key"])
+    key_profile["used"] += 1
+    REQUEST_LOGS.append({
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "key": client_key,
+        "tool": tool_name,
+        "query": parsed_queries if parsed_queries else "Direct Root Probe"
+    })
+
+    # Execute silent authorization handshake with primary internal cloud upstream framework
+    params["key"] = UPSTREAM_MASTER_KEY
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(f"{UPSTREAM_API_BASE}/{tool_name}", params=params, timeout=15.0)
+            return JSONResponse(content=response.json(), status_code=response.status_code)
+        except Exception:
+            return JSONResponse(status_code=502, content={"status": "failed", "error": "Upstream proxy interface pipeline timeout.", "developer": DEVELOPER_NAME})
+
+# --- CONTROLLER DASHBOARDS & CORE HTML INTERFACES ---
+
+@app.get("/", response_class=HTMLResponse)
+@app.get("/login", response_class=HTMLResponse)
+async def login_portal(session: Optional[str] = Cookie(None)):
+    if session == SESSION_TOKEN:
+        return RedirectResponse(url="/admin", status_code=303)
+        
+    return f"""
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>SHAYAN_EXPLORER | Secure Login</title>
+        <title>Identity Verification Matrix</title>
+        <script src="https://cdn.tailwindcss.com"></script>
         <style>
-            body {{ background: #080810; color: #e2e8f0; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }}
-            .login-card {{ background: rgba(15, 23, 42, 0.9); border: 1px solid #00d2ff; box-shadow: 0 0 20px rgba(0, 210, 255, 0.2); padding: 2.5rem; border-radius: 12px; width: 100%; max-width: 380px; text-align: center; }}
-            h2 {{ color: #00d2ff; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 1.5rem; }}
-            input[type="text"], input[type="password"] {{ width: 100%; padding: 12px; margin: 10px 0; background: #0f172a; border: 1px solid #1e293b; border-radius: 6px; color: #fff; box-sizing: border-box; }}
-            button {{ width: 100%; padding: 12px; background: linear-gradient(135deg, #00d2ff, #0066cc); border: none; border-radius: 6px; color: white; font-weight: bold; cursor: pointer; margin-top: 15px; }}
-            .error {{ color: #ef4444; margin-top: 10px; font-size: 0.9rem; }}
+            .neon-panel {{ box-shadow: 0 0 40px rgba(168, 85, 247, 0.15), inset 0 0 20px rgba(219, 39, 119, 0.05); }}
+            .glow-input:focus {{ box-shadow: 0 0 15px rgba(168, 85, 247, 0.4); border-color: #a855f7; }}
+            .neon-btn {{ box-shadow: 0 0 20px rgba(219, 39, 119, 0.4); }}
+            .neon-btn:hover {{ box-shadow: 0 0 30px rgba(219, 39, 119, 0.7); }}
         </style>
     </head>
-    <body>
-        <div class="login-card">
-            <h2>System Access</h2>
-            <form method="POST">
-                <input type="text" name="username" placeholder="Username" required autocomplete="off">
-                <input type="password" name="password" placeholder="Password" required>
-                <button type="submit">Initialize Engine</button>
+    <body class="bg-[#020203] text-zinc-100 flex items-center justify-center min-h-screen p-4 selection:bg-purple-600">
+        <div class="w-full max-w-md bg-[#070709] border border-zinc-800/60 p-8 rounded-[32px] neon-panel relative overflow-hidden">
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-purple-500 via-fuchsia-400 to-pink-500">{DEVELOPER_NAME}</h1>
+                <p class="text-[10px] font-mono text-zinc-500 tracking-widest uppercase mt-2">Gateway Central Identity Engine</p>
+            </div>
+            <form action="/login" method="POST" class="space-y-5">
+                <div>
+                    <label class="block text-[10px] font-mono uppercase tracking-widest text-zinc-400 mb-2">OPERATOR_ID</label>
+                    <input type="text" name="username" required class="w-full bg-[#0c0c0e] border border-zinc-800 rounded-xl px-4 py-3 text-sm transition-all outline-none font-mono text-purple-300 glow-input">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-mono uppercase tracking-widest text-zinc-400 mb-2">CYPHER_KEY</label>
+                    <input type="password" name="password" required class="w-full bg-[#0c0c0e] border border-zinc-800 rounded-xl px-4 py-3 text-sm transition-all outline-none font-mono text-pink-300 glow-input">
+                </div>
+                <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-mono font-bold uppercase tracking-widest py-4 rounded-xl transition duration-300 neon-btn">INITIALIZE_HANDSHAKE</button>
             </form>
-            {"<p class='error'>" + msg + "</p>" if msg else ""}
         </div>
     </body>
     </html>
-    '''
+    """
 
-@app.route('/logout')
-def logout_action():
-    session.pop('logged_in', None)
-    return redirect(url_for('login_panel'))
+@app.post("/login")
+async def process_login(username: str = Form(...), password: str = Form(...)):
+    if username == ADMIN_USER and password == ADMIN_PASS:
+        response = RedirectResponse(url="/admin", status_code=303)
+        response.set_cookie(key="session", value=SESSION_TOKEN, httponly=True, samesite="lax")
+        return response
+    return RedirectResponse(url="/login?error=invalid_handshake", status_code=303)
 
-@app.route('/dashboard')
-def dashboard_panel():
-    if not session.get('logged_in'):
-        return redirect(url_for('login_panel'))
-    return render_template_string(DASHBOARD_HTML_TEMPLATE, keys=API_KEYS, logs=REQUEST_LOGS, features=TARGET_APIS)
+@app.get("/logout")
+async def logout_action():
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie("session")
+    return response
 
-@app.route('/api/v1/generate-key', methods=['POST'])
-def generate_key_endpoint():
-    if not session.get('logged_in'):
-        return jsonify({"error": "Unauthorized"}), 401
+@app.get("/admin", response_class=HTMLResponse)
+async def administration_dashboard(session: Optional[str] = Cookie(None)):
+    if not is_authenticated(session):
+        return RedirectResponse(url="/login", status_code=303)
         
-    name = request.form.get('name', 'Default_User')
-    limit = int(request.form.get('limit', 100))
-    duration_days = request.form.get('duration_days')
-    scope_option = request.form.get('scope_type')
-    selected_apis = request.form.getlist('apis')
-    
-    lifetime_mode = True
-    expires_at = 0
-    if duration_days and duration_days != "lifetime":
-        lifetime_mode = False
-        expires_at = time.time() + (float(duration_days) * 86400)
+    tool_options_html = "".join([f"""
+    <label class="flex items-center space-x-3 bg-[#0c0c0e] border border-zinc-900 p-3 rounded-xl cursor-pointer hover:border-zinc-800 transition">
+        <input type="checkbox" name="tools" value="{t}" class="rounded border-zinc-800 bg-zinc-900 text-purple-600 focus:ring-purple-500 focus:ring-offset-0">
+        <span class="text-xs font-mono text-zinc-400 uppercase">{t}</span>
+    </label>
+    """ for t in AVAILABLE_TOOLS])
+
+    key_rows = []
+    for k, v in API_KEYS_DB.items():
+        status_color = "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" if v["status"] == "Active" else "text-amber-400 bg-amber-500/10 border-amber-500/20"
+        tool_badges = " ".join([f'<span class="bg-zinc-900 text-zinc-400 border border-zinc-800 text-[10px] px-2 py-0.5 rounded font-mono uppercase">{t}</span>' for t in v["tools"]])
         
-    allowed_endpoints = list(TARGET_APIS.keys()) if scope_option == "all" else selected_apis
-    new_token = "SHAYAN-" + str(uuid.uuid4()).upper().replace("-", "")[:16]
+        row = f"""
+        <tr class="border-b border-zinc-900/60 bg-[#050507]/40 hover:bg-[#09090b]/80 transition">
+            <td class="p-4 font-semibold text-xs max-w-[130px] truncate">{v['name']}</td>
+            <td class="p-4 font-mono text-xs text-purple-400 select-all font-bold tracking-wider">{k}</td>
+            <td class="p-4 text-xs font-mono text-zinc-300 countdown-container" id="expiry-row-{k}" data-expiry="{v['expiry']}" data-key="{k}">Evaluating...</td>
+            <td class="p-4 text-xs font-mono"><span class="text-pink-400 font-bold">{v['used']}</span> / {v['limit']}</td>
+            <td class="p-4"><span id="status-badge-{k}" class="px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full border {status_color}">{v['status']}</span></td>
+            <td class="p-4 max-w-[220px]"><div class="flex flex-wrap gap-1">{tool_badges}</div></td>
+            <td class="p-4 text-right">
+                <div class="inline-flex gap-1.5">
+                    <button onclick="triggerEditModal('{k}', '{v['name']}', {v['limit']}, '{','.join(v['tools'])}')" class="bg-purple-600/10 hover:bg-purple-600 border border-purple-500/20 px-2 py-1 text-[10px] font-mono rounded text-purple-400 hover:text-white transition">EDIT</button>
+                    <a href="/admin/reset/{k}" class="bg-pink-600/10 hover:bg-pink-600 border border-pink-500/20 px-2 py-1 text-[10px] font-mono rounded text-pink-400 hover:text-white transition">RESET</a>
+                    <a href="/admin/toggle/{k}" class="bg-amber-600/10 hover:bg-amber-600 border border-amber-500/20 px-2 py-1 text-[10px] font-mono rounded text-amber-400 hover:text-white transition">TOGGLE</a>
+                    <a href="/admin/delete/{k}" onclick="return confirm('Execute permanent removal?')" class="bg-red-600/10 hover:bg-red-600 border border-red-500/20 px-2 py-1 text-[10px] font-mono rounded text-red-400 hover:text-white transition">DEL</a>
+                </div>
+            </td>
+        </tr>
+        """
+        key_rows.append(row)
+
+    log_rows = []
+    for log in reversed(REQUEST_LOGS):
+        log_rows.append(f"""
+        <tr class="border-b border-zinc-900/40 text-xs font-mono hover:bg-[#050507] transition">
+            <td class="p-3 text-zinc-500 whitespace-nowrap">{log['time']}</td>
+            <td class="p-3 text-purple-400 select-all font-bold">{log['key']}</td>
+            <td class="p-3 text-pink-400 font-bold uppercase">{log['tool']}</td>
+            <td class="p-3 text-zinc-300 max-w-sm truncate select-all bg-zinc-950/50 rounded" title="{log['query']}">{log['query']}</td>
+        </tr>
+        """)
     
-    API_KEYS[new_token] = {
+    logs_table_body = "".join(log_rows) if log_rows else '<tr><td colspan="4" class="p-8 text-center text-zinc-600 font-mono text-xs">Waiting for telemetry pipeline metrics traffic...</td></tr>'
+
+    return f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Control Infrastructure Interface</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+            .neon-glow {{ box-shadow: 0 0 35px rgba(219, 39, 119, 0.08); }}
+            @keyframes critical-blink {{
+                0%, 100% {{ color: #ef4444; text-shadow: 0 0 10px rgba(239, 68, 68, 0.6); opacity: 1; }}
+                50% {{ color: #7f1d1d; text-shadow: 0 0 0px transparent; opacity: 0.4; }}
+            }}
+            .expiry-alert-active {{ animation: critical-blink 1s infinite; font-weight: 900; }}
+        </style>
+    </head>
+    <body class="bg-[#020203] text-zinc-100 min-h-screen font-sans selection:bg-purple-600">
+        
+        <nav class="border-b border-zinc-900 bg-[#050507]/90 sticky top-0 z-40 backdrop-blur px-4 py-4 md:px-8 flex justify-between items-center">
+            <div class="flex items-center space-x-4">
+                <span class="text-xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-pink-500 uppercase">{DEVELOPER_NAME}</span>
+            </div>
+            <div class="flex items-center space-x-2">
+                <button onclick="revealEndpointsModal()" class="border border-purple-500/30 hover:border-purple-500 bg-purple-950/20 hover:bg-purple-900/40 text-purple-400 hover:text-white text-xs font-mono py-1.5 px-4 rounded-xl transition duration-200">VIEW_SYSTEM_APIS</button>
+                <a href="/logout" class="border border-zinc-800 hover:border-red-500/40 hover:bg-red-950/20 text-zinc-500 hover:text-red-400 text-xs font-mono py-1.5 px-4 rounded-xl transition duration-200">LOGOUT</a>
+            </div>
+        </nav>
+
+        <div class="max-w-7xl mx-auto p-4 md:p-8 space-y-8">
+            
+            <section class="bg-[#070709] border border-zinc-900 rounded-3xl p-6 neon-glow">
+                <h2 class="text-sm font-mono uppercase tracking-widest text-purple-400 mb-6 flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Propose System Communications Key
+                </h2>
+                <form action="/admin/create" method="POST" class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div>
+                            <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Target Owner Name</label>
+                            <input type="text" name="name" required placeholder="e.g. Enterprise Client A" class="w-full bg-[#0c0c0e] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none focus:border-purple-500 transition font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Custom Assignment String</label>
+                            <input type="text" name="custom_key" placeholder="Automatic random key if empty" class="w-full bg-[#0c0c0e] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none focus:border-purple-500 transition font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Daily Multi-Call Limit</label>
+                            <input type="number" name="limit" required placeholder="Maximum queries allowed / day" class="w-full bg-[#0c0c0e] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none focus:border-purple-500 transition font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Life Management Strategy</label>
+                            <div class="flex items-center space-x-3 bg-[#0c0c0e] border border-zinc-800 h-[38px] rounded-xl px-4">
+                                <input type="checkbox" id="lifetime_toggle" name="lifetime" value="true" onchange="adjustExpiryConstraintState(this)" class="rounded border-zinc-800 bg-zinc-900 text-purple-600 focus:ring-purple-500">
+                                <label for="lifetime_toggle" class="text-xs font-mono text-zinc-400 cursor-pointer select-none">LIFETIME ACCESS TIER</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="expiry_date_container">
+                        <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Precise Timeline Target Expiration</label>
+                        <input type="datetime-local" id="expiry_input" name="expiry" class="bg-[#0c0c0e] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none focus:border-purple-500 transition font-mono w-full md:w-1/4">
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between items-center mb-3">
+                            <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500">Authorized Route Matrix Boundaries</label>
+                            <button type="button" onclick="bulkToggleExecutionModules()" class="text-[10px] font-mono uppercase text-pink-400 hover:underline">Select All Available Sub-Tools</button>
+                        </div>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2" id="tools_checkbox_grid">
+                            {tool_options_html}
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end pt-2">
+                        <button type="submit" class="w-full md:w-auto bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-mono font-bold uppercase tracking-widest py-3 px-8 rounded-xl transition duration-300">PROVISION_KEY</button>
+                    </div>
+                </form>
+            </section>
+
+            <section class="bg-[#070709] border border-zinc-900 rounded-3xl p-6 neon-glow overflow-hidden">
+                <h2 class="text-sm font-mono uppercase tracking-widest text-pink-400 mb-6 flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 rounded-full bg-pink-500"></span> Provisioned Key Registry Matrix
+                </h2>
+                <div class="overflow-x-auto w-full">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b border-zinc-900 text-[10px] font-mono text-zinc-500 uppercase tracking-wider">
+                                <th class="p-4">Owner Identity</th>
+                                <th class="p-4">Authorization Token Key</th>
+                                <th class="p-4">Dynamic Expiry Status Counter</th>
+                                <th class="p-4">Usage Performance Velocity</th>
+                                <th class="p-4">Ecosystem Status</th>
+                                <th class="p-4">Route Authorization Privileges Scope</th>
+                                <th class="p-4 text-right">System Configuration Interventions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-zinc-900/60">
+                            {"".join(key_rows)}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="bg-[#070709] border border-zinc-900 rounded-3xl p-6 neon-glow">
+                <h2 class="text-sm font-mono uppercase tracking-widest text-amber-400 mb-6 flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Intercepted Stream Logs Metric Pipeline
+                </h2>
+                <div class="overflow-x-auto w-full max-h-96">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b border-zinc-900 text-[10px] font-mono text-zinc-500 uppercase tracking-wider">
+                                <th class="p-3">Time Intercepted</th>
+                                <th class="p-3">Executing Key Token ID</th>
+                                <th class="p-3">Endpoint Route Call</th>
+                                <th class="p-3">Inspected Query Data Parameters Passed</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {logs_table_body}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <div id="endpoints_modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div class="bg-[#070709] border border-zinc-800 w-full max-w-3xl rounded-3xl p-6 relative max-h-[85vh] flex flex-col">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h3 class="text-sm font-mono uppercase tracking-widest text-purple-400">Available Base Pipeline APIs</h3>
+                        <p class="text-[10px] font-mono text-zinc-500 mt-1">Copy raw endpoint references seamlessly (Append active generated key to run validations)</p>
+                    </div>
+                    <button onclick="dismissEndpointsModal()" class="text-zinc-500 hover:text-white font-mono text-xs border border-zinc-800 px-3 py-1 rounded-xl">&times; CLOSE</button>
+                </div>
+                <div class="overflow-y-auto space-y-2 flex-1 p-1 bg-[#020203] rounded-2xl" id="endpoints_render_view">
+                    </div>
+            </div>
+        </div>
+
+        <div id="edit_modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div class="bg-[#070709] border border-zinc-800 w-full max-w-xl rounded-3xl p-6 relative">
+                <h3 class="text-sm font-mono uppercase tracking-widest text-purple-400 mb-6">Modify Gateway Authorization Profiles</h3>
+                <form action="/admin/edit" method="POST" class="space-y-4">
+                    <input type="hidden" name="key" id="edit_key_id">
+                    <div>
+                        <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-1">Update Owner Identity Name</label>
+                        <input type="text" name="name" id="edit_name" required class="w-full bg-[#0c0c0e] border border-zinc-800 rounded-xl px-4 py-2 text-xs text-zinc-200 outline-none font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-1">Recalibrate Transmit Limit</label>
+                        <input type="number" name="limit" id="edit_limit" required class="w-full bg-[#0c0c0e] border border-zinc-800 rounded-xl px-4 py-2 text-xs text-zinc-200 outline-none font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Adjust System Tool Clearances</label>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-40 overflow-y-auto p-2 bg-[#0c0c0e] border border-zinc-800 rounded-xl">
+                            {"".join([f'<div><label class="flex items-center space-x-2 text-xs font-mono text-zinc-500 cursor-pointer"><input type="checkbox" name="tools" value="{t}" id="modal_tool_{t}" class="rounded border-zinc-800 bg-zinc-900 text-purple-600"> <span class="uppercase">{t}</span></label></div>' for t in AVAILABLE_TOOLS])}
+                        </div>
+                    </div>
+                    <div class="flex justify-end space-x-2 pt-4">
+                        <button type="button" onclick="closeEditModal()" class="border border-zinc-800 hover:bg-zinc-900 px-4 py-2 rounded-xl text-xs font-mono text-zinc-500 transition">Cancel</button>
+                        <button type="submit" class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-xl text-xs font-mono font-bold uppercase transition">Save Gateway Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <script>
+            // Dynamic Generation Routing Handler Logic
+            function adjustExpiryConstraintState(checkbox) {{
+                const container = document.getElementById('expiry_date_container');
+                const input = document.getElementById('expiry_input');
+                if (checkbox.checked) {{
+                    container.style.opacity = '0.25';
+                    input.disabled = true;
+                    input.required = false;
+                    input.value = '';
+                }} else {{
+                    container.style.opacity = '1';
+                    input.disabled = false;
+                    input.required = true;
+                }}
+            }}
+            
+            function bulkToggleExecutionModules() {{
+                const checkboxes = document.querySelectorAll('#tools_checkbox_grid input[type="checkbox"]');
+                const currentStatus = Array.from(checkboxes).every(cb => cb.checked);
+                checkboxes.forEach(cb => cb.checked = !currentStatus);
+            }}
+
+            function triggerEditModal(key, name, limit, tools) {{
+                document.getElementById('edit_key_id').value = key;
+                document.getElementById('edit_name').value = name;
+                document.getElementById('edit_limit').value = limit;
+                
+                const toolArray = tools.split(',');
+                document.querySelectorAll('#edit_modal input[type="checkbox"]').forEach(cb => cb.checked = false);
+                toolArray.forEach(t => {{
+                    const checkbox = document.getElementById('modal_tool_' + t);
+                    if(checkbox) checkbox.checked = true;
+                }});
+                
+                document.getElementById('edit_modal').classList.remove('hidden');
+            }}
+
+            function closeEditModal() {{
+                document.getElementById('edit_modal').classList.add('hidden');
+            }}
+
+            // GLOBAL APIS VISUALIZATION ENGINE (WITHOUT EMBEDDED KEY)
+            function revealEndpointsModal() {{
+                const runtimeOrigin = window.location.origin;
+                const viewContainer = document.getElementById('endpoints_render_view');
+                viewContainer.innerHTML = '';
+                
+                const systemTools = {AVAILABLE_TOOLS};
+                systemTools.forEach(tool => {{
+                    const absoluteUri = `${{runtimeOrigin}}/api/${{tool}}?key=`;
+                    viewContainer.innerHTML += `
+                        <div class="p-3 border border-zinc-900 bg-[#070709] rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 font-mono text-xs">
+                            <span class="text-pink-500 font-extrabold uppercase tracking-wide px-2 py-0.5 bg-pink-500/10 rounded border border-pink-500/20 min-w-[100px] text-center">${{tool}}</span>
+                            <div class="flex items-center gap-2 w-full md:w-auto flex-1">
+                                <input type="text" readonly value="${{absoluteUri}}" class="bg-[#020203] border border-zinc-800 text-zinc-400 px-3 py-1.5 rounded-lg text-[11px] w-full outline-none select-all font-mono">
+                                <button onclick="navigator.clipboard.writeText('${{absoluteUri}}'); alert('Base path copied to clipboard.')" class="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 px-2.5 py-1.5 rounded-lg text-zinc-300 font-sans text-xs shrink-0">Copy</button>
+                            </div>
+                        </div>
+                    `;
+                }});
+                document.getElementById('endpoints_modal').classList.remove('hidden');
+            }}
+
+            function dismissEndpointsModal() {{
+                document.getElementById('endpoints_modal').classList.add('hidden');
+            }}
+
+            // REACTIVE CHRONOS DYNAMIC TELEMETRY COUNTDOWN MATRIX ENGINE
+            function initializeTelemetryCountdownEngine() {{
+                const containers = document.querySelectorAll('.countdown-container');
+                
+                setInterval(() => {{
+                    containers.forEach(element => {{
+                        const rawExpiry = element.getAttribute('data-expiry');
+                        const keyReference = element.getAttribute('data-key');
+                        
+                        if (rawExpiry === 'Lifetime') {{
+                            element.innerHTML = '<span class="text-fuchsia-400 font-bold uppercase tracking-widest text-[11px]">LIFETIME PRIVILEGE</span>';
+                            return;
+                        }}
+                        
+                        const targetEpoch = new Date(rawExpiry).getTime();
+                        const currentEpoch = new Date().getTime();
+                        const remains = targetEpoch - currentEpoch;
+                        
+                        const statusBadge = document.getElementById('status-badge-' + keyReference);
+                        
+                        if (remains <= 0) {{
+                            element.innerHTML = '<span class="text-red-500 font-black tracking-widest text-[11px] uppercase">EXPIRED</span>';
+                            if (statusBadge && !statusBadge.classList.contains('border-red-500/20')) {{
+                                statusBadge.innerText = 'Suspended';
+                                statusBadge.className = 'px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full border text-red-400 bg-red-500/10 border-red-500/20';
+                            }}
+                            return;
+                        }}
+                        
+                        // Parse granular measurements
+                        const hours = Math.floor(remains / (1000 * 60 * 60));
+                        const minutes = Math.floor((remains % (1000 * 60 * 60)) / (1000 * 60));
+                        const seconds = Math.floor((remains % (1000 * 60)) / 1000);
+                        
+                        const counterStringOutput = `${{hours}}H ${{minutes}}M ${{seconds}}S`;
+                        
+                        // Critical threshold visual warning configuration trigger (24 Hours)
+                        if (hours < 24) {{
+                            element.innerHTML = `<span class="expiry-alert-active">${{counterStringOutput}}</span>`;
+                        }} else {{
+                            element.innerHTML = `<span class="text-zinc-400 font-medium">${{counterStringOutput}}</span>`;
+                        }}
+                    }});
+                }}, 1000);
+            }}
+            
+            window.addEventListener('DOMContentLoaded', initializeTelemetryCountdownEngine);
+        </script>
+    </body>
+    </html>
+    """
+
+# --- CENTRAL CRUD TRANSACTION ENGINES ---
+
+@app.post("/admin/create")
+async def process_key_generation(
+    name: str = Form(...),
+    custom_key: Optional[str] = Form(None),
+    limit: int = Form(...),
+    lifetime: Optional[str] = Form(None),
+    expiry: Optional[str] = Form(None),
+    tools: List[str] = Form(default=[]),
+    session: Optional[str] = Cookie(None)
+):
+    if not is_authenticated(session):
+        raise HTTPException(status_code=401)
+        
+    generated_token = custom_key.strip() if custom_key and custom_key.strip() else f"VX-{uuid.uuid4().hex.upper()[:12]}"
+    expiration_strategy = "Lifetime" if lifetime == "true" else (expiry if expiry else "Lifetime")
+    scope_clearances = tools if tools else ["all"]
+
+    API_KEYS_DB[generated_token] = {
         "name": name,
         "limit": limit,
-        "req_count": 0,
-        "lifetime": lifetime_mode,
-        "expires_at": expires_at,
-        "scope": allowed_endpoints,
-        "status": "active"
+        "used": 0,
+        "expiry": expiration_strategy,
+        "tools": scope_clearances,
+        "status": "Active"
     }
-    return redirect(url_for('dashboard_panel'))
+    return RedirectResponse(url="/admin", status_code=303)
 
-@app.route('/api/v1/action-key', methods=['POST'])
-def action_key_endpoint():
-    if not session.get('logged_in'):
-        return jsonify({"error": "Unauthorized"}), 401
+@app.post("/admin/edit")
+async def process_key_modification(
+    key: str = Form(...),
+    name: str = Form(...),
+    limit: int = Form(...),
+    tools: List[str] = Form(default=[]),
+    session: Optional[str] = Cookie(None)
+):
+    if not is_authenticated(session):
+        raise HTTPException(status_code=401)
         
-    target_token = request.form.get('token')
-    operation = request.form.get('operation')
-    
-    if target_token in API_KEYS:
-        if operation == "suspend":
-            API_KEYS[target_token]["status"] = "suspended"
-        elif operation == "unsuspend":
-            API_KEYS[target_token]["status"] = "active"
-        elif operation == "delete":
-            del API_KEYS[target_token]
-            
-    return redirect(url_for('dashboard_panel'))
-
-@app.route('/api/<endpoint>')
-def gateway_proxy(endpoint):
-    user_key = request.args.get('key')
-    evaluation = evaluate_key_status(user_key)
-    
-    if not evaluation["valid"]:
-        return jsonify({"status": "failed", "error": evaluation["reason"]}), 403
+    if key in API_KEYS_DB:
+        API_KEYS_DB[key]["name"] = name
+        API_KEYS_DB[key]["limit"] = limit
+        API_KEYS_DB[key]["tools"] = tools if tools else ["all"]
         
-    key_config = evaluation["data"]
-    if endpoint not in TARGET_APIS or endpoint not in key_config["scope"]:
-        return jsonify({"status": "failed", "error": "Endpoint access route restriction triggered."}), 403
+    return RedirectResponse(url="/admin", status_code=303)
 
-    query_params = request.args.to_dict()
-    query_params['key'] = UPSTREAM_TOKEN 
-    
-    log_payload = {
-        "timestamp": time.strftime('%H:%M:%S'),
-        "key": user_key,
-        "name": key_config["name"],
-        "endpoint": endpoint,
-        "query": str({k: v for k, v in query_params.items() if k != 'key'})
-    }
-    REQUEST_LOGS.insert(0, log_payload)
-    if len(REQUEST_LOGS) > 100:
-        REQUEST_LOGS.pop()
+@app.get("/admin/reset/{key}")
+async def clear_usage_counters(key: str, session: Optional[str] = Cookie(None)):
+    if not is_authenticated(session):
+        raise HTTPException(status_code=401)
+    if key in API_KEYS_DB:
+        API_KEYS_DB[key]["used"] = 0
+    return RedirectResponse(url="/admin", status_code=303)
 
-    API_KEYS[user_key]["req_count"] += 1
+@app.get("/admin/toggle/{key}")
+async def process_suspension_toggle(key: str, session: Optional[str] = Cookie(None)):
+    if not is_authenticated(session):
+        raise HTTPException(status_code=401)
+    if key in API_KEYS_DB:
+        current_state = API_KEYS_DB[key]["status"]
+        API_KEYS_DB[key]["status"] = "Suspended" if current_state == "Active" else "Active"
+    return RedirectResponse(url="/admin", status_code=303)
 
-    try:
-        resp = requests.get(TARGET_APIS[endpoint], params=query_params, timeout=10)
-        output_data = resp.json()
-        if isinstance(output_data, dict):
-            output_data.pop('@ftgamer2', None)
-            output_data.pop('@bornex Ultra', None)
-            output_data.pop('channel', None)
-            output_data['developer'] = "SHAYAN_EXPLORER"
-        return jsonify(output_data), resp.status_code
-    except Exception as e:
-        return jsonify({"status": "failed", "error": "Upstream processing timeout"}), 500
+@app.get("/admin/delete/{key}")
+async def execute_key_destruction(key: str, session: Optional[str] = Cookie(None)):
+    if not is_authenticated(session):
+        raise HTTPException(status_code=401)
+    if key in API_KEYS_DB:
+        del API_KEYS_DB[key]
+    return RedirectResponse(url="/admin", status_code=303)
+
+
 
 
 
