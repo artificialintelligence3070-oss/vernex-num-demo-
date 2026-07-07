@@ -1,53 +1,60 @@
 import os
 import uuid
+import json
 import httpx
 from datetime import datetime
 from typing import List, Optional
 from fastapi import FastAPI, Request, Form, HTTPException, status, Cookie
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 
-app = FastAPI(title="SHAYAN_EXPLORER Gateway Platform")
+app = FastAPI(title="SHAYAN_EXPLORER Premium Gateway Platform")
 
-# --- CORE ARCHITECTURE GLOBAL INITIALIZATION ---
+# --- CENTRAL PLATFORM SPECIFICATIONS ---
 DEVELOPER_NAME = "SHAYAN_EXPLORER"
+CREDIT_TAG = "by @vernexzzz"
+CHANNEL_URL = "https://t.me/shayan_explorer_channel"
+
 UPSTREAM_API_BASE = "https://ft-osint-api.duckdns.org/api"
-UPSTREAM_MASTER_KEY = "vx-osint"
+UPSTREAM_MASTER_KEY = "vernex-6a9dc4fdd5923c40b0aba27bf1e39e3f"
 
 ADMIN_USER = "vernex"
 ADMIN_PASS = "vernex@16vx"
 SESSION_TOKEN = "vx_session_secure_token_2026"
 
-AVAILABLE_TOOLS = ["adv", "paytm", "imei", "calltracer", "upi", "ifsc", "number", "pincode", "ip", "challan", "ff", "bgmi", "snap", "email", "vehicle", "git", "insta", "tg", "tgidinfo", "numleak"]
+# Expanded tools registry containing all old and newly requested utility routes
+AVAILABLE_TOOLS = [
+    "adv", "paytm", "imei", "calltracer", "upi", "ifsc", "number", "pincode", "ip", 
+    "challan", "ff", "bgmi", "snap", "email", "vehicle", "git", "insta", "tg", 
+    "tgidinfo", "numleak", "pk", "name", "aadhar", "numtoupi", "pan", "veh2num", 
+    "adharfamily", "bomber"
+]
 
-# Static in-memory database simulation
+# Static in-memory sandbox data store
 API_KEYS_DB = {
-    "VERNEX-DEMO-TOKEN": {
-        "name": "Default Tester Profile",
-        "limit": 2500,
+    "VERNEX-PREMIUM-MASTER": {
+        "name": "Global Live Stream Feed",
+        "limit": 10000,
         "used": 0,
-        "expiry": "2026-12-31T23:59",
+        "expiry": "Lifetime",
         "tools": ["all"],
         "status": "Active"
     }
 }
 REQUEST_LOGS = []
 
-# --- SECURITY HANDSHAKE UTILITIES ---
 def is_authenticated(session: Optional[str] = Cookie(None)) -> bool:
     return session == SESSION_TOKEN
 
-# --- SAFE PROXY CONDUIT ---
+# --- SAFE GATEWAY PROXY WITH DYNAMIC CONTENT CLEANSING ---
 @app.get("/api/{tool_name}")
 async def proxy_gateway(tool_name: str, request: Request):
     params = dict(request.query_params)
     client_key = params.get("key")
     
-    # Absolute protection structure preventing internal runtime crashes
     if not client_key or client_key not in API_KEYS_DB:
         return JSONResponse(status_code=403, content={"status": "failed", "error": "Unauthorized Access. Invalid API Key."})
         
     key_profile = API_KEYS_DB[client_key]
-    
     if key_profile["status"] == "Suspended":
         return JSONResponse(status_code=403, content={"status": "failed", "error": "This access profile has been explicitly suspended."})
         
@@ -55,7 +62,7 @@ async def proxy_gateway(tool_name: str, request: Request):
         try:
             expiry_dt = datetime.fromisoformat(key_profile["expiry"])
             if datetime.now() > expiry_dt:
-                key_profile["status"] = "Suspended" # Automatically drop status context on verification pass
+                key_profile["status"] = "Suspended"
                 return JSONResponse(status_code=403, content={"status": "failed", "error": "This allocation key has hit its lifecycle limit and expired."})
         except Exception:
             return JSONResponse(status_code=500, content={"status": "failed", "error": "Key validation parse mismatch anomaly encountered."})
@@ -64,9 +71,9 @@ async def proxy_gateway(tool_name: str, request: Request):
         return JSONResponse(status_code=429, content={"status": "failed", "error": "Volumetric threshold usage capacity exhausted for today."})
 
     if "all" not in key_profile["tools"] and tool_name not in key_profile["tools"]:
-        return JSONResponse(status_code=403, content={"status": "failed", "error": f"Token lack clearance context metrics for target sub-utility tool module: [{tool_name}]."})
+        return JSONResponse(status_code=403, content={"status": "failed", "error": f"Token lacks clearance metrics for route: [{tool_name}]."})
 
-    # Trace contextual queries
+    # Track operational telemetry
     parsed_queries = ", ".join([f"{k}={v}" for k, v in params.items() if k != "key"])
     key_profile["used"] += 1
     REQUEST_LOGS.append({
@@ -76,16 +83,32 @@ async def proxy_gateway(tool_name: str, request: Request):
         "query": parsed_queries if parsed_queries else "Direct Root Probe"
     })
 
-    # Execute silent authorization handshake with primary internal cloud upstream framework
+    # Forward request with master key replacement
     params["key"] = UPSTREAM_MASTER_KEY
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(f"{UPSTREAM_API_BASE}/{tool_name}", params=params, timeout=15.0)
-            return JSONResponse(content=response.json(), status_code=response.status_code)
+            
+            # --- DYNAMIC RESPONSE SANITIZATION ENGINE ---
+            raw_content = response.text
+            
+            # Wipe out historical branding strings
+            raw_content = raw_content.replace("@ftgamer2", CREDIT_TAG)
+            raw_content = raw_content.replace("https://t.me/lynx_api", CHANNEL_URL)
+            raw_content = raw_content.replace("@bronex_ultra", CREDIT_TAG)
+            raw_content = raw_content.replace("@@bornex_ultra", CREDIT_TAG)
+            
+            # Reassemble response output safely without crashing structural formatting
+            try:
+                sanitized_json = json.loads(raw_content)
+                return JSONResponse(content=sanitized_json, status_code=response.status_code)
+            except Exception:
+                return HTMLResponse(content=raw_content, status_code=response.status_code)
+                
         except Exception:
             return JSONResponse(status_code=502, content={"status": "failed", "error": "Upstream proxy interface pipeline timeout.", "developer": DEVELOPER_NAME})
 
-# --- CONTROLLER DASHBOARDS & CORE HTML INTERFACES ---
+# --- USER PORTAL INTERFACES ---
 
 @app.get("/", response_class=HTMLResponse)
 @app.get("/login", response_class=HTMLResponse)
@@ -112,7 +135,7 @@ async def login_portal(session: Optional[str] = Cookie(None)):
         <div class="w-full max-w-md bg-[#070709] border border-zinc-800/60 p-8 rounded-[32px] neon-panel relative overflow-hidden">
             <div class="text-center mb-8">
                 <h1 class="text-3xl font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-purple-500 via-fuchsia-400 to-pink-500">{DEVELOPER_NAME}</h1>
-                <p class="text-[10px] font-mono text-zinc-500 tracking-widest uppercase mt-2">Gateway Central Identity Engine</p>
+                <p class="text-[10px] font-mono text-zinc-500 tracking-widest uppercase mt-2">Centralized Access Gatehouse</p>
             </div>
             <form action="/login" method="POST" class="space-y-5">
                 <div>
@@ -136,7 +159,7 @@ async def process_login(username: str = Form(...), password: str = Form(...)):
         response = RedirectResponse(url="/admin", status_code=303)
         response.set_cookie(key="session", value=SESSION_TOKEN, httponly=True, samesite="lax")
         return response
-    return RedirectResponse(url="/login?error=invalid_handshake", status_code=303)
+    return RedirectResponse(url="/login?error=failed_handshake", status_code=303)
 
 @app.get("/logout")
 async def logout_action():
@@ -174,7 +197,7 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                     <button onclick="triggerEditModal('{k}', '{v['name']}', {v['limit']}, '{','.join(v['tools'])}')" class="bg-purple-600/10 hover:bg-purple-600 border border-purple-500/20 px-2 py-1 text-[10px] font-mono rounded text-purple-400 hover:text-white transition">EDIT</button>
                     <a href="/admin/reset/{k}" class="bg-pink-600/10 hover:bg-pink-600 border border-pink-500/20 px-2 py-1 text-[10px] font-mono rounded text-pink-400 hover:text-white transition">RESET</a>
                     <a href="/admin/toggle/{k}" class="bg-amber-600/10 hover:bg-amber-600 border border-amber-500/20 px-2 py-1 text-[10px] font-mono rounded text-amber-400 hover:text-white transition">TOGGLE</a>
-                    <a href="/admin/delete/{k}" onclick="return confirm('Execute permanent removal?')" class="bg-red-600/10 hover:bg-red-600 border border-red-500/20 px-2 py-1 text-[10px] font-mono rounded text-red-400 hover:text-white transition">DEL</a>
+                    <a href="/admin/delete/{k}" onclick="return confirm('Execute permanent token removal?')" class="bg-red-600/10 hover:bg-red-600 border border-red-500/20 px-2 py-1 text-[10px] font-mono rounded text-red-400 hover:text-white transition">DEL</a>
                 </div>
             </td>
         </tr>
@@ -192,7 +215,7 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
         </tr>
         """)
     
-    logs_table_body = "".join(log_rows) if log_rows else '<tr><td colspan="4" class="p-8 text-center text-zinc-600 font-mono text-xs">Waiting for telemetry pipeline metrics traffic...</td></tr>'
+    logs_table_body = "".join(log_rows) if log_rows else '<tr><td colspan="4" class="p-8 text-center text-zinc-600 font-mono text-xs">Awaiting structural telemetry stream traffic data...</td></tr>'
 
     return f"""
     <!DOCTYPE html>
@@ -200,22 +223,23 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Control Infrastructure Interface</title>
+        <title>Control Terminal Workspace</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <style>
-            .neon-glow {{ box-shadow: 0 0 35px rgba(219, 39, 119, 0.08); }}
+            .neon-glow {{ box-shadow: 0 0 35px rgba(168, 85, 247, 0.1); }}
             @keyframes critical-blink {{
-                0%, 100% {{ color: #ef4444; text-shadow: 0 0 10px rgba(239, 68, 68, 0.6); opacity: 1; }}
-                50% {{ color: #7f1d1d; text-shadow: 0 0 0px transparent; opacity: 0.4; }}
+                0%, 100% {{ color: #ff0055; text-shadow: 0 0 12px rgba(255, 0, 85, 0.6); opacity: 1; }}
+                50% {{ color: #4a0018; text-shadow: 0 0 0px transparent; opacity: 0.3; }}
             }}
             .expiry-alert-active {{ animation: critical-blink 1s infinite; font-weight: 900; }}
         </style>
     </head>
-    <body class="bg-[#020203] text-zinc-100 min-h-screen font-sans selection:bg-purple-600">
+    <body class="bg-[#010102] text-zinc-100 min-h-screen font-sans selection:bg-purple-600">
         
-        <nav class="border-b border-zinc-900 bg-[#050507]/90 sticky top-0 z-40 backdrop-blur px-4 py-4 md:px-8 flex justify-between items-center">
-            <div class="flex items-center space-x-4">
+        <nav class="border-b border-zinc-900 bg-[#040406]/90 sticky top-0 z-40 backdrop-blur px-4 py-4 md:px-8 flex justify-between items-center">
+            <div class="flex flex-col md:flex-row items-start md:items-center gap-1 md:gap-3">
                 <span class="text-xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-pink-500 uppercase">{DEVELOPER_NAME}</span>
+                <span class="text-[9px] font-mono text-zinc-500 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded uppercase tracking-wider">{CREDIT_TAG}</span>
             </div>
             <div class="flex items-center space-x-2">
                 <button onclick="revealEndpointsModal()" class="border border-purple-500/30 hover:border-purple-500 bg-purple-950/20 hover:bg-purple-900/40 text-purple-400 hover:text-white text-xs font-mono py-1.5 px-4 rounded-xl transition duration-200">VIEW_SYSTEM_APIS</button>
@@ -225,27 +249,27 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
 
         <div class="max-w-7xl mx-auto p-4 md:p-8 space-y-8">
             
-            <section class="bg-[#070709] border border-zinc-900 rounded-3xl p-6 neon-glow">
+            <section class="bg-[#060608] border border-zinc-900 rounded-3xl p-6 neon-glow">
                 <h2 class="text-sm font-mono uppercase tracking-widest text-purple-400 mb-6 flex items-center gap-2">
-                    <span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Propose System Communications Key
+                    <span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Provision Key Parameters
                 </h2>
                 <form action="/admin/create" method="POST" class="space-y-6">
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         <div>
                             <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Target Owner Name</label>
-                            <input type="text" name="name" required placeholder="e.g. Enterprise Client A" class="w-full bg-[#0c0c0e] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none focus:border-purple-500 transition font-mono">
+                            <input type="text" name="name" required placeholder="Client Profile Alias" class="w-full bg-[#0b0b0d] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none focus:border-purple-500 transition font-mono">
                         </div>
                         <div>
-                            <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Custom Assignment String</label>
-                            <input type="text" name="custom_key" placeholder="Automatic random key if empty" class="w-full bg-[#0c0c0e] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none focus:border-purple-500 transition font-mono">
+                            <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Custom Access Key Text</label>
+                            <input type="text" name="custom_key" placeholder="System auto generates if blank" class="w-full bg-[#0b0b0d] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none focus:border-purple-500 transition font-mono">
                         </div>
                         <div>
-                            <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Daily Multi-Call Limit</label>
-                            <input type="number" name="limit" required placeholder="Maximum queries allowed / day" class="w-full bg-[#0c0c0e] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none focus:border-purple-500 transition font-mono">
+                            <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Daily Quota Speed Threshold</label>
+                            <input type="number" name="limit" required placeholder="Max queries / day" class="w-full bg-[#0b0b0d] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none focus:border-purple-500 transition font-mono">
                         </div>
                         <div>
-                            <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Life Management Strategy</label>
-                            <div class="flex items-center space-x-3 bg-[#0c0c0e] border border-zinc-800 h-[38px] rounded-xl px-4">
+                            <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Lifecycle Lifespan Plan</label>
+                            <div class="flex items-center space-x-3 bg-[#0b0b0d] border border-zinc-800 h-[38px] rounded-xl px-4">
                                 <input type="checkbox" id="lifetime_toggle" name="lifetime" value="true" onchange="adjustExpiryConstraintState(this)" class="rounded border-zinc-800 bg-zinc-900 text-purple-600 focus:ring-purple-500">
                                 <label for="lifetime_toggle" class="text-xs font-mono text-zinc-400 cursor-pointer select-none">LIFETIME ACCESS TIER</label>
                             </div>
@@ -253,14 +277,14 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                     </div>
 
                     <div id="expiry_date_container">
-                        <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Precise Timeline Target Expiration</label>
-                        <input type="datetime-local" id="expiry_input" name="expiry" class="bg-[#0c0c0e] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none focus:border-purple-500 transition font-mono w-full md:w-1/4">
+                        <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Precise Localized Expiration Clock</label>
+                        <input type="datetime-local" id="expiry_input" name="expiry" class="bg-[#0b0b0d] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none focus:border-purple-500 transition font-mono w-full md:w-1/4">
                     </div>
 
                     <div>
                         <div class="flex justify-between items-center mb-3">
-                            <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500">Authorized Route Matrix Boundaries</label>
-                            <button type="button" onclick="bulkToggleExecutionModules()" class="text-[10px] font-mono uppercase text-pink-400 hover:underline">Select All Available Sub-Tools</button>
+                            <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500">Route Authorization Network Privileges</label>
+                            <button type="button" onclick="bulkToggleExecutionModules()" class="text-[10px] font-mono uppercase text-pink-400 hover:underline">Select All Internal Routes</button>
                         </div>
                         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2" id="tools_checkbox_grid">
                             {tool_options_html}
@@ -273,20 +297,20 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                 </form>
             </section>
 
-            <section class="bg-[#070709] border border-zinc-900 rounded-3xl p-6 neon-glow overflow-hidden">
+            <section class="bg-[#060608] border border-zinc-900 rounded-3xl p-6 neon-glow overflow-hidden">
                 <h2 class="text-sm font-mono uppercase tracking-widest text-pink-400 mb-6 flex items-center gap-2">
-                    <span class="w-1.5 h-1.5 rounded-full bg-pink-500"></span> Provisioned Key Registry Matrix
+                    <span class="w-1.5 h-1.5 rounded-full bg-pink-500"></span> Live Client Matrix Registries
                 </h2>
                 <div class="overflow-x-auto w-full">
                     <table class="w-full text-left border-collapse">
                         <thead>
                             <tr class="border-b border-zinc-900 text-[10px] font-mono text-zinc-500 uppercase tracking-wider">
-                                <th class="p-4">Owner Identity</th>
+                                <th class="p-4">Owner Profile</th>
                                 <th class="p-4">Authorization Token Key</th>
-                                <th class="p-4">Dynamic Expiry Status Counter</th>
-                                <th class="p-4">Usage Performance Velocity</th>
-                                <th class="p-4">Ecosystem Status</th>
-                                <th class="p-4">Route Authorization Privileges Scope</th>
+                                <th class="p-4">Live Expiry Stream</th>
+                                <th class="p-4">Usage Counter Volumetric</th>
+                                <th class="p-4">Status</th>
+                                <th class="p-4">Route Scopes</th>
                                 <th class="p-4 text-right">System Configuration Interventions</th>
                             </tr>
                         </thead>
@@ -297,18 +321,18 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                 </div>
             </section>
 
-            <section class="bg-[#070709] border border-zinc-900 rounded-3xl p-6 neon-glow">
+            <section class="bg-[#060608] border border-zinc-900 rounded-3xl p-6 neon-glow">
                 <h2 class="text-sm font-mono uppercase tracking-widest text-amber-400 mb-6 flex items-center gap-2">
-                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Intercepted Stream Logs Metric Pipeline
+                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Core Data Traffic Logs Stream
                 </h2>
                 <div class="overflow-x-auto w-full max-h-96">
                     <table class="w-full text-left border-collapse">
                         <thead>
                             <tr class="border-b border-zinc-900 text-[10px] font-mono text-zinc-500 uppercase tracking-wider">
-                                <th class="p-3">Time Intercepted</th>
-                                <th class="p-3">Executing Key Token ID</th>
+                                <th class="p-3">Time Stamp</th>
+                                <th class="p-3">Executing Token Key</th>
                                 <th class="p-3">Endpoint Route Call</th>
-                                <th class="p-3">Inspected Query Data Parameters Passed</th>
+                                <th class="p-3">Query Data Context Parameters</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -320,53 +344,52 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
         </div>
 
         <div id="endpoints_modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div class="bg-[#070709] border border-zinc-800 w-full max-w-3xl rounded-3xl p-6 relative max-h-[85vh] flex flex-col">
+            <div class="bg-[#060608] border border-zinc-800 w-full max-w-3xl rounded-3xl p-6 relative max-h-[85vh] flex flex-col">
                 <div class="flex justify-between items-center mb-6">
                     <div>
-                        <h3 class="text-sm font-mono uppercase tracking-widest text-purple-400">Available Base Pipeline APIs</h3>
-                        <p class="text-[10px] font-mono text-zinc-500 mt-1">Copy raw endpoint references seamlessly (Append active generated key to run validations)</p>
+                        <h3 class="text-sm font-mono uppercase tracking-widest text-purple-400">Available System API Paths</h3>
+                        <p class="text-[10px] font-mono text-zinc-500 mt-1">Append structural access credentials parameters manually to pass gateway firewalls.</p>
                     </div>
                     <button onclick="dismissEndpointsModal()" class="text-zinc-500 hover:text-white font-mono text-xs border border-zinc-800 px-3 py-1 rounded-xl">&times; CLOSE</button>
                 </div>
-                <div class="overflow-y-auto space-y-2 flex-1 p-1 bg-[#020203] rounded-2xl" id="endpoints_render_view">
+                <div class="overflow-y-auto space-y-2 flex-1 p-1 bg-[#010102] rounded-2xl" id="endpoints_render_view">
                     </div>
             </div>
         </div>
 
         <div id="edit_modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div class="bg-[#070709] border border-zinc-800 w-full max-w-xl rounded-3xl p-6 relative">
+            <div class="bg-[#060608] border border-zinc-800 w-full max-w-xl rounded-3xl p-6 relative">
                 <h3 class="text-sm font-mono uppercase tracking-widest text-purple-400 mb-6">Modify Gateway Authorization Profiles</h3>
                 <form action="/admin/edit" method="POST" class="space-y-4">
                     <input type="hidden" name="key" id="edit_key_id">
                     <div>
                         <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-1">Update Owner Identity Name</label>
-                        <input type="text" name="name" id="edit_name" required class="w-full bg-[#0c0c0e] border border-zinc-800 rounded-xl px-4 py-2 text-xs text-zinc-200 outline-none font-mono">
+                        <input type="text" name="name" id="edit_name" required class="w-full bg-[#0b0b0d] border border-zinc-800 rounded-xl px-4 py-2 text-xs text-zinc-200 outline-none font-mono">
                     </div>
                     <div>
                         <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-1">Recalibrate Transmit Limit</label>
-                        <input type="number" name="limit" id="edit_limit" required class="w-full bg-[#0c0c0e] border border-zinc-800 rounded-xl px-4 py-2 text-xs text-zinc-200 outline-none font-mono">
+                        <input type="number" name="limit" id="edit_limit" required class="w-full bg-[#0b0b0d] border border-zinc-800 rounded-xl px-4 py-2 text-xs text-zinc-200 outline-none font-mono">
                     </div>
                     <div>
                         <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Adjust System Tool Clearances</label>
-                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-40 overflow-y-auto p-2 bg-[#0c0c0e] border border-zinc-800 rounded-xl">
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-40 overflow-y-auto p-2 bg-[#0b0b0d] border border-zinc-800 rounded-xl">
                             {"".join([f'<div><label class="flex items-center space-x-2 text-xs font-mono text-zinc-500 cursor-pointer"><input type="checkbox" name="tools" value="{t}" id="modal_tool_{t}" class="rounded border-zinc-800 bg-zinc-900 text-purple-600"> <span class="uppercase">{t}</span></label></div>' for t in AVAILABLE_TOOLS])}
                         </div>
                     </div>
                     <div class="flex justify-end space-x-2 pt-4">
                         <button type="button" onclick="closeEditModal()" class="border border-zinc-800 hover:bg-zinc-900 px-4 py-2 rounded-xl text-xs font-mono text-zinc-500 transition">Cancel</button>
-                        <button type="submit" class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-xl text-xs font-mono font-bold uppercase transition">Save Gateway Changes</button>
+                        <button type="submit" class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-xl text-xs font-mono font-bold uppercase transition">Save Profile Changes</button>
                     </div>
                 </form>
             </div>
         </div>
 
         <script>
-            // Dynamic Generation Routing Handler Logic
             function adjustExpiryConstraintState(checkbox) {{
                 const container = document.getElementById('expiry_date_container');
                 const input = document.getElementById('expiry_input');
                 if (checkbox.checked) {{
-                    container.style.opacity = '0.25';
+                    container.style.opacity = '0.2';
                     input.disabled = true;
                     input.required = false;
                     input.value = '';
@@ -402,21 +425,38 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                 document.getElementById('edit_modal').classList.add('hidden');
             }}
 
-            // GLOBAL APIS VISUALIZATION ENGINE (WITHOUT EMBEDDED KEY)
+            // RENDER SYSTEM ENDPOINTS DYNAMIC DATA REFERENCES WITHOUT EXPLICIT INTERNAL KEYS
             function revealEndpointsModal() {{
-                const runtimeOrigin = window.location.origin;
-                const viewContainer = document.getElementById('endpoints_render_view');
-                viewContainer.innerHTML = '';
+                const deploymentHostOrigin = window.location.origin;
+                const renderTargetNode = document.getElementById('endpoints_render_view');
+                renderTargetNode.innerHTML = '';
                 
-                const systemTools = {AVAILABLE_TOOLS};
-                systemTools.forEach(tool => {{
-                    const absoluteUri = `${{runtimeOrigin}}/api/${{tool}}?key=`;
-                    viewContainer.innerHTML += `
-                        <div class="p-3 border border-zinc-900 bg-[#070709] rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 font-mono text-xs">
-                            <span class="text-pink-500 font-extrabold uppercase tracking-wide px-2 py-0.5 bg-pink-500/10 rounded border border-pink-500/20 min-w-[100px] text-center">${{tool}}</span>
+                const toolsListArray = {AVAILABLE_TOOLS};
+                
+                // Blueprint route mock configuration settings for scannable user guidelines
+                const routeBlueprints = {{
+                    "pk": "num=0000000000",
+                    "name": "name=abhiraaj",
+                    "aadhar": "num=[Aadhaar Redacted]",
+                    "upi": "upi=example@ybl",
+                    "numtoupi": "num=8945996482",
+                    "pan": "pan=AXDPR2606K",
+                    "vehicle": "vehicle=KA01AB1234",
+                    "veh2num": "vehicle=KL41V3504",
+                    "adharfamily": "num=[Aadhaar Redacted]",
+                    "bomber": "number=9876543210&counter=100"
+                }};
+
+                toolsListArray.forEach(t => {{
+                    const structuralParameters = routeBlueprints[t] || "query=example_data";
+                    const fullyFormedPath = `${{deploymentHostOrigin}}/api/${{t}}?key=&${{structuralParameters}}`;
+                    
+                    renderTargetNode.innerHTML += `
+                        <div class="p-3 border border-zinc-900 bg-[#060608] rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 font-mono text-xs">
+                            <span class="text-purple-400 font-extrabold uppercase tracking-wide px-2 py-0.5 bg-purple-500/10 rounded border border-purple-500/20 min-w-[110px] text-center">${{t}}</span>
                             <div class="flex items-center gap-2 w-full md:w-auto flex-1">
-                                <input type="text" readonly value="${{absoluteUri}}" class="bg-[#020203] border border-zinc-800 text-zinc-400 px-3 py-1.5 rounded-lg text-[11px] w-full outline-none select-all font-mono">
-                                <button onclick="navigator.clipboard.writeText('${{absoluteUri}}'); alert('Base path copied to clipboard.')" class="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 px-2.5 py-1.5 rounded-lg text-zinc-300 font-sans text-xs shrink-0">Copy</button>
+                                <input type="text" readonly value="${{fullyFormedPath}}" class="bg-[#010102] border border-zinc-800 text-zinc-400 px-3 py-1.5 rounded-lg text-[11px] w-full outline-none font-mono selection:bg-purple-600">
+                                <button onclick="navigator.clipboard.writeText('${{fullyFormedPath}}'); alert('Target endpoint copied.')" class="bg-zinc-950 border border-zinc-800 hover:border-zinc-700 px-3 py-1.5 rounded-lg text-zinc-300 font-sans text-xs shrink-0 transition">Copy</button>
                             </div>
                         </div>
                     `;
@@ -428,59 +468,57 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                 document.getElementById('endpoints_modal').classList.add('hidden');
             }}
 
-            // REACTIVE CHRONOS DYNAMIC TELEMETRY COUNTDOWN MATRIX ENGINE
-            function initializeTelemetryCountdownEngine() {{
-                const containers = document.querySelectorAll('.countdown-container');
+            // CHRONOS DYNAMIC NEON COUNTDOWN ENGINE WITH LIFETIME PROTECTION RULES
+            function runChronosTrackingEngine() {{
+                const activeRegistryRows = document.querySelectorAll('.countdown-container');
                 
                 setInterval(() => {{
-                    containers.forEach(element => {{
-                        const rawExpiry = element.getAttribute('data-expiry');
-                        const keyReference = element.getAttribute('data-key');
+                    activeRegistryRows.forEach(rowNode => {{
+                        const rawExpiryString = rowNode.getAttribute('data-expiry');
+                        const keyUniqueToken = rowNode.getAttribute('data-key');
                         
-                        if (rawExpiry === 'Lifetime') {{
-                            element.innerHTML = '<span class="text-fuchsia-400 font-bold uppercase tracking-widest text-[11px]">LIFETIME PRIVILEGE</span>';
+                        if (rawExpiryString === 'Lifetime') {{
+                            rowNode.innerHTML = '<span class="text-fuchsia-400 font-bold uppercase tracking-widest text-[10px]">LIFETIME PRIVILEGE</span>';
                             return;
                         }}
                         
-                        const targetEpoch = new Date(rawExpiry).getTime();
-                        const currentEpoch = new Date().getTime();
-                        const remains = targetEpoch - currentEpoch;
+                        const targetMillisecondEpoch = new Date(rawExpiryString).getTime();
+                        const currentMillisecondEpoch = new Date().getTime();
+                        const trackingTimeDelta = targetMillisecondEpoch - currentMillisecondEpoch;
+                        const targetStatusBadge = document.getElementById('status-badge-' + keyUniqueToken);
                         
-                        const statusBadge = document.getElementById('status-badge-' + keyReference);
-                        
-                        if (remains <= 0) {{
-                            element.innerHTML = '<span class="text-red-500 font-black tracking-widest text-[11px] uppercase">EXPIRED</span>';
-                            if (statusBadge && !statusBadge.classList.contains('border-red-500/20')) {{
-                                statusBadge.innerText = 'Suspended';
-                                statusBadge.className = 'px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full border text-red-400 bg-red-500/10 border-red-500/20';
+                        if (trackingTimeDelta <= 0) {{
+                            rowNode.innerHTML = '<span class="text-red-500 font-black tracking-widest text-[10px] uppercase">EXPIRED</span>';
+                            if (targetStatusBadge && !targetStatusBadge.classList.contains('border-red-500/20')) {{
+                                targetStatusBadge.innerText = 'Suspended';
+                                targetStatusBadge.className = 'px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full border text-red-400 bg-red-500/10 border-red-500/20';
                             }}
                             return;
                         }}
                         
-                        // Parse granular measurements
-                        const hours = Math.floor(remains / (1000 * 60 * 60));
-                        const minutes = Math.floor((remains % (1000 * 60 * 60)) / (1000 * 60));
-                        const seconds = Math.floor((remains % (1000 * 60)) / 1000);
+                        const parseHours = Math.floor(trackingTimeDelta / (1000 * 60 * 60));
+                        const parseMinutes = Math.floor((trackingTimeDelta % (1000 * 60 * 60)) / (1000 * 60));
+                        const parseSeconds = Math.floor((trackingTimeDelta % (1000 * 60)) / 1000);
                         
-                        const counterStringOutput = `${{hours}}H ${{minutes}}M ${{seconds}}S`;
+                        const formattedClockOutput = `${{parseHours}}H ${{parseMinutes}}M ${{parseSeconds}}S`;
                         
-                        // Critical threshold visual warning configuration trigger (24 Hours)
-                        if (hours < 24) {{
-                            element.innerHTML = `<span class="expiry-alert-active">${{counterStringOutput}}</span>`;
+                        // Active blink trigger context applied strictly inside critical 24-Hour window bounds
+                        if (parseHours < 24) {{
+                            rowNode.innerHTML = `<span class="expiry-alert-active">${{formattedClockOutput}}</span>`;
                         }} else {{
-                            element.innerHTML = `<span class="text-zinc-400 font-medium">${{counterStringOutput}}</span>`;
+                            rowNode.innerHTML = `<span class="text-zinc-400 font-mono">${{formattedClockOutput}}</span>`;
                         }}
                     }});
-                }}, 1000);
+                }, 1000);
             }}
             
-            window.addEventListener('DOMContentLoaded', initializeTelemetryCountdownEngine);
+            window.addEventListener('DOMContentLoaded', runChronosTrackingEngine);
         </script>
     </body>
     </html>
     """
 
-# --- CENTRAL CRUD TRANSACTION ENGINES ---
+# --- SYSTEM MODIFICATION REGISTRY HANDLERS ---
 
 @app.post("/admin/create")
 async def process_key_generation(
