@@ -20,17 +20,8 @@ ADMIN_USER = "vernex"
 ADMIN_PASS = "vernex@16vx"
 SESSION_TOKEN = "vx_session_secure_token_2026"
 
-# Integrated core tools along with the fresh batch of requested modules
-AVAILABLE_TOOLS = [
-    "pk", "name", "aadhar", "upi", "numtoupi", "pan", "vehicle", 
-    "veh2num", "adharfamily", "bomber", "adv", "paytm", "imei", 
-    "calltracer", "ifsc", "number", "pincode", "ip", "challan", 
-    "ff", "bgmi", "snap", "email", "git", "insta", "tg", "tgidinfo", 
-    "numleak", "voter_id", "passport_status", "driving_license", "bin_verify"
-]
-
-# Temporary memory store (Note: Resets on serverless deployment environments when idle)
-API_KEYS_DB = {
+# 🚀 Add any keys here that you want to work FOREVER without wiping out on Vercel
+PERMANENT_KEYS = {
     "vx-osint": {
         "name": "Master Deployment Key",
         "limit": 5000,
@@ -38,8 +29,35 @@ API_KEYS_DB = {
         "expiry": "Lifetime",
         "tools": ["all"],
         "status": "Active"
+    },
+    "shayan-vip": {
+        "name": "Official Bot Key",
+        "limit": 99999,
+        "used": 0,
+        "expiry": "Lifetime",
+        "tools": ["all"],
+        "status": "Active"
+    },
+    "test-key-1": {
+        "name": "Premium Customer Key",
+        "limit": 10000,
+        "used": 0,
+        "expiry": "Lifetime",
+        "tools": ["all"],
+        "status": "Active"
     }
 }
+
+# Complete list of your requested API endpoints + custom ones
+AVAILABLE_TOOLS = [
+    "pk", "name", "aadhar", "upi", "numtoupi", "pan", "vehicle", 
+    "veh2num", "adharfamily", "bomber", "adv", "paytm", "imei", 
+    "calltracer", "ifsc", "number", "pincode", "ip", "challan", 
+    "ff", "bgmi", "snap", "email", "git", "insta", "tg", "tgidinfo", "numleak"
+]
+
+# Temporary memory store (Resets when Vercel serverless instances go idle)
+API_KEYS_DB = {}
 REQUEST_LOGS = []
 
 def is_authenticated(session: Optional[str] = Cookie(None)) -> bool:
@@ -51,20 +69,28 @@ async def proxy_gateway(tool_name: str, request: Request):
     params = dict(request.query_params)
     client_key = params.get("key")
     
-    # Universal credit metadata injected into all returns
     credit_meta = {
         "by": DEVELOPER_CREDIT,
         "telegram": TELEGRAM_CHANNEL
     }
     
-    if not client_key or client_key not in API_KEYS_DB:
+    if not client_key:
         return JSONResponse(
             status_code=403, 
-            content={"status": "failed", "error": "Unauthorized Access. Invalid API Key.", **credit_meta}
+            content={"status": "failed", "error": "Missing API Key parameter.", **credit_meta}
+        )
+    
+    # Check Permanent Hardcoded Registry first, then check Volatile DB
+    if client_key in PERMANENT_KEYS:
+        key_profile = PERMANENT_KEYS[client_key]
+    elif client_key in API_KEYS_DB:
+        key_profile = API_KEYS_DB[client_key]
+    else:
+        return JSONResponse(
+            status_code=403, 
+            content={"status": "failed", "error": "Invalid API key.", **credit_meta}
         )
         
-    key_profile = API_KEYS_DB[client_key]
-    
     if key_profile["status"] == "Suspended":
         return JSONResponse(
             status_code=403, 
@@ -98,7 +124,7 @@ async def proxy_gateway(tool_name: str, request: Request):
             content={"status": "failed", "error": f"Token lacks permission metrics for module: [{tool_name}].", **credit_meta}
         )
 
-    # Clean trace logs (scrubs master credentials from tracking tables)
+    # Track logging metrics
     parsed_queries = ", ".join([f"{k}={v}" for k, v in params.items() if k != "key"])
     key_profile["used"] += 1
     REQUEST_LOGS.append({
@@ -108,14 +134,14 @@ async def proxy_gateway(tool_name: str, request: Request):
         "query": parsed_queries if parsed_queries else "Direct Root Probe"
     })
 
-    # Swap client key with master internal key for upstream infrastructure auth
+    # Forward to upstream provider setup
     params["key"] = UPSTREAM_MASTER_KEY
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(f"{UPSTREAM_API_BASE}/{tool_name}", params=params, timeout=15.0)
             res_data = response.json()
             
-            # Enforce clean formatting across successful data vectors
+            # Enforce branding onto every successful payload response
             if isinstance(res_data, dict):
                 res_data["by"] = DEVELOPER_CREDIT
                 res_data["telegram"] = TELEGRAM_CHANNEL
@@ -142,27 +168,23 @@ async def login_portal(session: Optional[str] = Cookie(None)):
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Control Center - Login</title>
         <script src="https://cdn.tailwindcss.com"></script>
-        <style>
-            .neon-panel {{ box-shadow: 0 0 40px rgba(168, 85, 247, 0.15); }}
-            .glow-input:focus {{ box-shadow: 0 0 15px rgba(168, 85, 247, 0.4); border-color: #a855f7; }}
-        </style>
     </head>
     <body class="bg-[#040406] text-zinc-100 flex items-center justify-center min-h-screen p-4">
-        <div class="w-full max-w-md bg-[#09090c] border border-zinc-800 p-8 rounded-3xl neon-panel">
+        <div class="w-full max-w-md bg-[#09090c] border border-zinc-800 p-8 rounded-3xl" style="box-shadow: 0 0 40px rgba(168, 85, 247, 0.15);">
             <div class="text-center mb-8">
-                <h1 class="text-3xl font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-purple-500 via-fuchsia-400 to-pink-500">{DEVELOPER_NAME}</h1>
+                <h1 class="text-3xl font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-pink-500">{DEVELOPER_NAME}</h1>
                 <p class="text-[10px] font-mono text-zinc-500 tracking-widest uppercase mt-2">Platform Gateway Authorization Portal</p>
             </div>
             <form action="/login" method="POST" class="space-y-5">
                 <div>
                     <label class="block text-[10px] font-mono uppercase tracking-widest text-zinc-400 mb-2">OPERATOR ID</label>
-                    <input type="text" name="username" required class="w-full bg-[#111116] border border-zinc-800 rounded-xl px-4 py-3 text-sm outline-none font-mono text-purple-300 glow-input">
+                    <input type="text" name="username" required class="w-full bg-[#111116] border border-zinc-800 rounded-xl px-4 py-3 text-sm outline-none font-mono text-purple-300">
                 </div>
                 <div>
                     <label class="block text-[10px] font-mono uppercase tracking-widest text-zinc-400 mb-2">CYPHER KEY</label>
-                    <input type="password" name="password" required class="w-full bg-[#111116] border border-zinc-800 rounded-xl px-4 py-3 text-sm outline-none font-mono text-pink-300 glow-input">
+                    <input type="password" name="password" required class="w-full bg-[#111116] border border-zinc-800 rounded-xl px-4 py-3 text-sm outline-none font-mono text-pink-300">
                 </div>
-                <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-mono font-bold uppercase tracking-widest py-4 rounded-xl transition duration-300">INITIALIZE_HANDSHAKE</button>
+                <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-mono font-bold uppercase tracking-widest py-4 rounded-xl">INITIALIZE_HANDSHAKE</button>
             </form>
             <div class="mt-6 text-center">
                 <a href="{TELEGRAM_CHANNEL}" target="_blank" class="text-[10px] font-mono tracking-wider text-zinc-600 hover:text-purple-400 transition">POWERED BY {DEVELOPER_CREDIT}</a>
@@ -178,7 +200,7 @@ async def process_login(username: str = Form(...), password: str = Form(...)):
         response = RedirectResponse(url="/admin", status_code=303)
         response.set_cookie(key="session", value=SESSION_TOKEN, httponly=True, samesite="lax")
         return response
-    return RedirectResponse(url="/login?error=invalid_handshake", status_code=303)
+    return RedirectResponse(url="/login?error=invalid", status_code=303)
 
 @app.get("/logout")
 async def logout_action():
@@ -199,8 +221,13 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
     """ for t in AVAILABLE_TOOLS])
 
     key_rows = []
-    for k, v in API_KEYS_DB.items():
-        status_color = "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" if v["status"] == "Active" else "text-amber-400 bg-amber-500/10 border-amber-500/20"
+    # Merge both databases into dashboard monitor matrix display cleanly
+    COMBINED_REGISTRY = {**PERMANENT_KEYS, **API_KEYS_DB}
+    
+    for k, v in COMBINED_REGISTRY.items():
+        is_perm = k in PERMANENT_KEYS
+        badge_style = "text-fuchsia-400 bg-fuchsia-500/10 border-fuchsia-500/20" if is_perm else "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+        status_label = "PERMANENT" if is_perm else v["status"]
         tool_badges = " ".join([f'<span class="bg-zinc-900 text-zinc-400 border border-zinc-800 text-[10px] px-2 py-0.5 rounded font-mono uppercase">{t}</span>' for t in v["tools"]])
         
         row = f"""
@@ -209,14 +236,16 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
             <td class="p-4 font-mono text-xs text-purple-400 select-all font-bold tracking-wider">{k}</td>
             <td class="p-4 text-xs font-mono text-zinc-300 countdown-container" id='expiry-row-{k}' data-expiry='{v['expiry']}' data-key='{k}'>Evaluating...</td>
             <td class="p-4 text-xs font-mono"><span class="text-pink-400 font-bold">{v['used']}</span> / {v['limit']}</td>
-            <td class="p-4"><span id='status-badge-{k}' class="px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full border {status_color}">{v['status']}</span></td>
+            <td class="p-4"><span id='status-badge-{k}' class="px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full border {badge_style}">{status_label}</span></td>
             <td class="p-4 max-w-[220px]"><div class="flex flex-wrap gap-1">{tool_badges}</div></td>
             <td class="p-4 text-right">
                 <div class="inline-flex gap-1.5">
+                    {"<span class='text-[10px] font-mono text-zinc-600 p-1'>CODE_PROTECTED</span>" if is_perm else f'''
                     <button onclick="triggerEditModal('{k}', '{v['name']}', {v['limit']}, '{','.join(v['tools'])}')" class="bg-purple-600/10 hover:bg-purple-600 border border-purple-500/20 px-2 py-1 text-[10px] font-mono rounded text-purple-400 hover:text-white transition">EDIT</button>
                     <a href="/admin/reset/{k}" class="bg-pink-600/10 hover:bg-pink-600 border border-pink-500/20 px-2 py-1 text-[10px] font-mono rounded text-pink-400 hover:text-white transition">RESET</a>
                     <a href="/admin/toggle/{k}" class="bg-amber-600/10 hover:bg-amber-600 border border-amber-500/20 px-2 py-1 text-[10px] font-mono rounded text-amber-400 hover:text-white transition">TOGGLE</a>
                     <a href="/admin/delete/{k}" onclick="return confirm('Execute permanent removal?')" class="bg-red-600/10 hover:bg-red-600 border border-red-500/20 px-2 py-1 text-[10px] font-mono rounded text-red-400 hover:text-white transition">DEL</a>
+                    '''}
                 </div>
             </td>
         </tr>
@@ -234,7 +263,7 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
         </tr>
         """)
     
-    logs_table_body = "".join(log_rows) if log_rows else '<tr><td colspan="4" class="p-8 text-center text-zinc-600 font-mono text-xs">No active request stream metrics tracking currently.</td></tr>'
+    logs_table_body = "".join(log_rows) if log_rows else '<tr><td colspan="4" class="p-8 text-center text-zinc-600 font-mono text-xs">No active telemetry inputs.</td></tr>'
 
     return f"""
     <!DOCTYPE html>
@@ -244,14 +273,6 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>{DEVELOPER_NAME} Control Interface</title>
         <script src="https://cdn.tailwindcss.com"></script>
-        <style>
-            .neon-glow {{ box-shadow: 0 0 35px rgba(168, 85, 247, 0.05); }}
-            @keyframes critical-blink {{
-                0%, 100% {{ color: #ef4444; opacity: 1; }}
-                50% {{ color: #7f1d1d; opacity: 0.5; }}
-            }}
-            .expiry-alert-active {{ animation: critical-blink 1s infinite; }}
-        </style>
     </head>
     <body class="bg-[#040406] text-zinc-100 min-h-screen font-sans">
         
@@ -268,9 +289,9 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
         </nav>
 
         <div class="max-w-7xl mx-auto p-4 md:p-8 space-y-8">
-            <section class="bg-[#09090c] border border-zinc-800 rounded-3xl p-6 neon-glow">
+            <section class="bg-[#09090c] border border-zinc-800 rounded-3xl p-6">
                 <h2 class="text-sm font-mono uppercase tracking-widest text-purple-400 mb-6 flex items-center gap-2">
-                    <span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Propose System Communications Key
+                    <span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Provision Temporary Session Key
                 </h2>
                 <form action="/admin/create" method="POST" class="space-y-6">
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -316,7 +337,7 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                 </form>
             </section>
 
-            <section class="bg-[#09090c] border border-zinc-800 rounded-3xl p-6 neon-glow overflow-hidden">
+            <section class="bg-[#09090c] border border-zinc-800 rounded-3xl p-6 overflow-hidden">
                 <h2 class="text-sm font-mono uppercase tracking-widest text-pink-400 mb-6 flex items-center gap-2">
                     <span class="w-1.5 h-1.5 rounded-full bg-pink-500"></span> Key Registry Matrix
                 </h2>
@@ -330,7 +351,7 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                                 <th class="p-4">Usage Velocity</th>
                                 <th class="p-4">Status</th>
                                 <th class="p-4">Route Scope Privileges</th>
-                                <th class="p-4 text-right">System Configuration Interventions</th>
+                                <th class="p-4 text-right">Interventions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -340,9 +361,9 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                 </div>
             </section>
 
-            <section class="bg-[#09090c] border border-zinc-800 rounded-3xl p-6 neon-glow">
+            <section class="bg-[#09090c] border border-zinc-800 rounded-3xl p-6">
                 <h2 class="text-sm font-mono uppercase tracking-widest text-amber-400 mb-6 flex items-center gap-2">
-                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Intercepted Request Streams Pipeline Logs
+                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Intercepted Request Logs Pipeline
                 </h2>
                 <div class="overflow-x-auto w-full max-h-96">
                     <table class="w-full text-left border-collapse">
@@ -471,9 +492,7 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                 setInterval(() => {{
                     containers.forEach(element => {{
                         const rawExpiry = element.getAttribute('data-expiry');
-                        const keyReference = element.getAttribute('data-key');
-                        
-                        if (rawExpiry === 'Lifetime') {{
+                        if (!rawExpiry || rawExpiry === 'Lifetime') {{
                             element.innerHTML = '<span class="text-fuchsia-400 font-bold uppercase tracking-widest text-[11px]">LIFETIME ACCESS</span>';
                             return;
                         }}
@@ -482,14 +501,8 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                         const currentEpoch = new Date().getTime();
                         const remains = targetEpoch - currentEpoch;
                         
-                        const statusBadge = document.getElementById('status-badge-' + keyReference);
-                        
                         if (remains <= 0) {{
                             element.innerHTML = '<span class="text-red-500 font-black tracking-widest text-[11px] uppercase">EXPIRED</span>';
-                            if (statusBadge && !statusBadge.classList.contains('border-red-500/20')) {{
-                                statusBadge.innerText = 'Suspended';
-                                statusBadge.className = 'px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full border text-red-400 bg-red-500/10 border-red-500/20';
-                            }}
                             return;
                         }}
                         
@@ -497,13 +510,7 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                         const minutes = Math.floor((remains % (1000 * 60 * 60)) / (1000 * 60));
                         const seconds = Math.floor((remains % (1000 * 60)) / 1000);
                         
-                        const counterStringOutput = `${{hours}}H ${{minutes}}M ${{seconds}}S`;
-                        
-                        if (hours < 24) {{
-                            element.innerHTML = `<span class="expiry-alert-active text-red-400 font-bold">${{counterStringOutput}}</span>`;
-                        }} else {{
-                            element.innerHTML = `<span class="text-zinc-400 font-medium">${{counterStringOutput}}</span>`;
-                        }}
+                        element.innerHTML = `<span class="text-zinc-400 font-medium">${{hours}}H ${{minutes}}M ${{seconds}}S</span>`;
                     }});
                 }}, 1000);
             }}
