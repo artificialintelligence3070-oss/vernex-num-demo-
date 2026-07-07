@@ -8,27 +8,39 @@ from flask import Flask, request, jsonify, render_template_string, redirect, ses
 app = Flask(__name__)
 app.secret_key = "vx_secret_glow_core_2026"
 
-# Absolute persistence path inside writable /tmp or local fallback
-DB_FILE = "/tmp/vx_osint_database.json" if os.path.exists("/tmp") else "vx_osint_database.json"
+# VERCEL SERVERLESS SAFE PERSISTENCE LOGIC
+# We store inside /tmp which is the only writable area on Vercel instances
+DB_FILE = "/tmp/vx_osint_database.json"
+
+# In-memory fallback matrix to prevent 500 errors if /tmp disk cycle flashes
+_MEMORY_DB = {
+    "keys": {},
+    "logs": []
+}
 
 def load_db():
-    if not os.path.exists(DB_FILE):
-        default_data = {
-            "keys": {},
-            "logs": []
-        }
-        with open(DB_FILE, "w") as f:
-            json.dump(default_data, f)
-        return default_data
-    try:
-        with open(DB_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {"keys": {}, "logs": []}
+    global _MEMORY_DB
+    # If file exists in writable /tmp space, sync memory from it
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, "r") as f:
+                data = json.load(f)
+                # Sync keys and logs safely
+                _MEMORY_DB["keys"].update(data.get("keys", {}))
+                _MEMORY_DB["logs"] = data.get("logs", [])[-200:] # Cap logs size
+        except Exception:
+            pass
+    return _MEMORY_DB
 
 def save_db(data):
-    with open(DB_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+    global _MEMORY_DB
+    _MEMORY_DB = data
+    try:
+        with open(DB_FILE, "w") as f:
+            json.dump(data, f, indent=4)
+    except Exception:
+        # If /tmp is locked, memory fallback keeps server alive without crashing (No 500 error)
+        pass
 
 # Native Master Target Endpoint Rules
 TARGET_API_BASE = "https://ft-osint-api.duckdns.org/api"
@@ -398,7 +410,7 @@ DASHBOARD_HTML = """
                         </div>
                         
                         <div class="ops-panel">
-                            <form action="/action/modify//{{key}}" method="POST" style="display:inline;">
+                            <form action="/action/modify/{{key}}" method="POST" style="display:inline;">
                                 {% if info.suspended %}
                                 <input type="hidden" name="op" value="unsuspend">
                                 <button type="submit" class="btn-op btn-unsuspend">Unsuspend</button>
@@ -411,7 +423,7 @@ DASHBOARD_HTML = """
                                 <input type="hidden" name="op" value="delete">
                                 <button type="submit" class="btn-op btn-delete" onclick="return confirm('Confirm complete immediate key drop configuration?')">Remove</button>
                             </form>
-                            <button class="btn-op btn-edit" onclick="openEditModal('{{key}}', '{{info.name}}', '{{info.limit}}', '{{info.expiry_type}}')">Edit Configuration</button>
+                            <button class="btn-op btn-edit" onclick="openEditModal('{{key}}', '{{info.name|escape}}', '{{info.limit}}', '{{info.expiry_type}}')">Edit Configuration</button>
                         </div>
                     </div>
                     {% endfor %}
