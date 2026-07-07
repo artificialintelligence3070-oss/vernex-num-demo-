@@ -9,10 +9,8 @@ app = Flask(__name__)
 app.secret_key = "vx_secret_glow_core_2026"
 
 # VERCEL SERVERLESS SAFE PERSISTENCE LOGIC
-# We store inside /tmp which is the only writable area on Vercel instances
 DB_FILE = "/tmp/vx_osint_database.json"
 
-# In-memory fallback matrix to prevent 500 errors if /tmp disk cycle flashes
 _MEMORY_DB = {
     "keys": {},
     "logs": []
@@ -20,14 +18,12 @@ _MEMORY_DB = {
 
 def load_db():
     global _MEMORY_DB
-    # If file exists in writable /tmp space, sync memory from it
     if os.path.exists(DB_FILE):
         try:
             with open(DB_FILE, "r") as f:
                 data = json.load(f)
-                # Sync keys and logs safely
                 _MEMORY_DB["keys"].update(data.get("keys", {}))
-                _MEMORY_DB["logs"] = data.get("logs", [])[-200:] # Cap logs size
+                _MEMORY_DB["logs"] = data.get("logs", [])[-200:]
         except Exception:
             pass
     return _MEMORY_DB
@@ -39,7 +35,6 @@ def save_db(data):
         with open(DB_FILE, "w") as f:
             json.dump(data, f, indent=4)
     except Exception:
-        # If /tmp is locked, memory fallback keeps server alive without crashing (No 500 error)
         pass
 
 # Native Master Target Endpoint Rules
@@ -85,32 +80,26 @@ def proxy_api(endpoint_name):
 
     key_info = db["keys"][user_key]
 
-    # Check Suspension Status
     if key_info.get("suspended", False):
         return jsonify({"status": "error", "message": "The key is suspended by admin."}), 403
 
-    # Check Scope Permissions
     allowed_tools = key_info.get("allowed_tools", "all")
     if allowed_tools != "all" and endpoint_name not in allowed_tools:
         return jsonify({"status": "error", "message": f"This key does not have access to [{endpoint_name}]. Upgrade your plan."}), 403
 
-    # Check Temporal Expiry
     expiry_type = key_info.get("expiry_type", "lifetime")
     if expiry_type == "date":
         expire_timestamp = key_info.get("expiry_timestamp", 0)
         if time.time() > expire_timestamp:
             return jsonify({"status": "error", "message": "The key is expired. Please buy a new key."}), 401
 
-    # Check Request Usage Limits
     max_limit = int(key_info.get("limit", 0))
     current_usage = int(key_info.get("usage", 0))
     if max_limit > 0 and current_usage >= max_limit:
         return jsonify({"status": "error", "message": "Key request limit reached. Rate limit exceeded."}), 429
 
-    # Update state usage metric safely
     db["keys"][user_key]["usage"] = current_usage + 1
     
-    # Track diagnostic logs safely
     search_query = json.dumps({k: v for k, v in request.args.items() if k != 'key'})
     db["logs"].append({
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -121,7 +110,6 @@ def proxy_api(endpoint_name):
     })
     save_db(db)
 
-    # Build backend target upstream URL dynamically
     param_template = API_ENDPOINTS[endpoint_name]
     query_params = {k: v for k, v in request.args.items() if k != 'key'}
     query_params['key'] = UPSTREAM_KEY
@@ -163,8 +151,13 @@ def login_dashboard():
 def admin_panel():
     if not session.get("logged_in"):
         return redirect(url_for("login_dashboard"))
+    
     db = load_db()
-    return render_template_string(DASHBOARD_HTML, db=db, endpoints=API_ENDPOINTS.keys())
+    # PRE-SLICE LOGS IN PYTHON TO AVOID JINJA TEMPLATE SYNTAX CRASHES
+    recent_logs = db.get("logs", [])[-50:]
+    recent_logs.reverse()
+    
+    return render_template_string(DASHBOARD_HTML, db=db, endpoints=API_ENDPOINTS.keys(), recent_logs=recent_logs)
 
 @app.route("/logout")
 def logout():
@@ -222,7 +215,7 @@ def action_modify(key):
         save_db(db)
     return redirect(url_for("admin_panel"))
 
-# ================= DESIGN UI FRAMEWORKS (2026 NEO-GLOW AESTHETIC) =================
+# ================= UI MARKUP =================
 LOGIN_HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -288,7 +281,6 @@ DASHBOARD_HTML = """
         .btn-action { width: 100%; background: linear-gradient(45deg, #00f2fe, #7928ca); border: none; color: #fff; padding: 12px; font-weight: bold; border-radius: 6px; cursor: pointer; text-transform: uppercase; transition: 0.3s; margin-top: 10px; }
         .btn-action:hover { filter: brightness(1.2); box-shadow: 0 0 15px rgba(0,242,254,0.4); }
         
-        /* Key Rows Card layout */
         .key-box { background: #0d091a; border: 1px solid rgba(255,255,255,0.04); border-radius: 8px; padding: 16px; margin-bottom: 15px; border-left: 4px solid #00f2fe; transition: 0.2s; }
         .key-box.suspended { border-left-color: #ff0055; opacity: 0.6; }
         .key-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
@@ -305,19 +297,16 @@ DASHBOARD_HTML = """
         .btn-delete { background: #b30000; }
         .btn-edit { background: #3b2073; }
         
-        /* Endpoints section button copy elements */
         .endpoints-showcase { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 25px; background: #110b22; padding: 15px; border-radius: 8px; border: 1px dashed rgba(255,0,128,0.3); }
         .endpoint-btn { background: #1b1333; border: 1px solid rgba(255,255,255,0.1); color: #00f2fe; padding: 8px 12px; border-radius: 6px; font-size: 0.8rem; cursor: pointer; font-family: monospace; transition: 0.2s; }
         .endpoint-btn:hover { background: #ff007f; color: #fff; box-shadow: 0 0 10px rgba(255,0,128,0.4); border-color: transparent; }
         
-        /* Logs display matrix */
         .log-table-wrapper { overflow-x: auto; max-height: 300px; background: #090514; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05); }
         table { width: 100%; border-collapse: collapse; font-size: 0.8rem; text-align: left; }
         th, td { padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.05); }
         th { background: #130d26; color: #00f2fe; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; }
         tr:hover { background: rgba(255,255,255,0.02); }
         
-        /* Modal Config */
         .modal { display:none; position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); backdrop-filter:blur(5px); justify-content:center; align-items:center; z-index:999; padding: 20px; }
         .modal-content { background:#16102b; border: 1px solid #ff007f; width:100%; max-width:450px; padding:25px; border-radius:12px; position:relative; }
         .close-modal { position:absolute; top:12px; right:16px; color:#fff; font-size:1.4rem; cursor:pointer; }
@@ -370,7 +359,6 @@ DASHBOARD_HTML = """
         </div>
 
         <div style="display: flex; flex-direction: column; gap: 30px;">
-            
             <div class="card">
                 <h2>Fast Core Endpoints Registry (One-Click Snippet Copy)</h2>
                 <div class="endpoints-showcase">
@@ -443,7 +431,7 @@ DASHBOARD_HTML = """
                             </tr>
                         </thead>
                         <tbody>
-                            {% for log in db.logs[-50:]|reverse %}
+                            {% for log in recent_logs %}
                             <tr>
                                 <td style="white-space:nowrap; color:#00f2fe;">{{ log.timestamp }}</td>
                                 <td><span style="font-family:monospace; color:#ff007f;">{{ log.key_name }}</span></td>
@@ -547,7 +535,5 @@ DASHBOARD_HTML = """
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
-
-
 
 
