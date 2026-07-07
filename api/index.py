@@ -15,7 +15,7 @@ CREDIT_TAG = "by @vernexzzz"
 CHANNEL_URL = "https://t.me/shayan_explorer_channel"
 
 UPSTREAM_API_BASE = "https://ft-osint-api.duckdns.org/api"
-UPSTREAM_MASTER_KEY = "vernex-6a9dc4fdd5923c40b0aba27bf1e39e3f"
+UPSTREAM_MASTER_KEY = "vx-osint"
 
 ADMIN_USER = "vernex"
 ADMIN_PASS = "vernex@16vx"
