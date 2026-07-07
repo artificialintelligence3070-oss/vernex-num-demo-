@@ -10,20 +10,26 @@ app = FastAPI(title="SHAYAN_EXPLORER Gateway Platform")
 
 # --- CORE CONFIGURATION ---
 DEVELOPER_NAME = "SHAYAN_EXPLORER"
+DEVELOPER_CREDIT = "@vernexzzz"
+TELEGRAM_CHANNEL = "https://t.me/shayan_explorer_channel"
+
 UPSTREAM_API_BASE = "https://ft-osint-api.duckdns.org/api"
-UPSTREAM_MASTER_KEY = "vx-osint"
+UPSTREAM_MASTER_KEY = "vernex-6a9dc4fdd5923c40b0aba27bf1e39e3f"
 
 ADMIN_USER = "vernex"
 ADMIN_PASS = "vernex@16vx"
 SESSION_TOKEN = "vx_session_secure_token_2026"
 
+# Integrated core tools along with the fresh batch of requested modules
 AVAILABLE_TOOLS = [
-    "adv", "paytm", "imei", "calltracer", "upi", "ifsc", "number", 
-    "pincode", "ip", "challan", "ff", "bgmi", "snap", "email", 
-    "vehicle", "git", "insta", "tg", "tgidinfo", "numleak"
+    "pk", "name", "aadhar", "upi", "numtoupi", "pan", "vehicle", 
+    "veh2num", "adharfamily", "bomber", "adv", "paytm", "imei", 
+    "calltracer", "ifsc", "number", "pincode", "ip", "challan", 
+    "ff", "bgmi", "snap", "email", "git", "insta", "tg", "tgidinfo", 
+    "numleak", "voter_id", "passport_status", "driving_license", "bin_verify"
 ]
 
-# Temporary memory store (Resets on serverless idle)
+# Temporary memory store (Note: Resets on serverless deployment environments when idle)
 API_KEYS_DB = {
     "vx-osint": {
         "name": "Master Deployment Key",
@@ -45,30 +51,54 @@ async def proxy_gateway(tool_name: str, request: Request):
     params = dict(request.query_params)
     client_key = params.get("key")
     
+    # Universal credit metadata injected into all returns
+    credit_meta = {
+        "by": DEVELOPER_CREDIT,
+        "telegram": TELEGRAM_CHANNEL
+    }
+    
     if not client_key or client_key not in API_KEYS_DB:
-        return JSONResponse(status_code=403, content={"status": "failed", "error": "Unauthorized Access. Invalid API Key."})
+        return JSONResponse(
+            status_code=403, 
+            content={"status": "failed", "error": "Unauthorized Access. Invalid API Key.", **credit_meta}
+        )
         
     key_profile = API_KEYS_DB[client_key]
     
     if key_profile["status"] == "Suspended":
-        return JSONResponse(status_code=403, content={"status": "failed", "error": "This access profile has been explicitly suspended."})
+        return JSONResponse(
+            status_code=403, 
+            content={"status": "failed", "error": "This access profile has been explicitly suspended.", **credit_meta}
+        )
         
     if key_profile["expiry"] != "Lifetime":
         try:
             expiry_dt = datetime.fromisoformat(key_profile["expiry"])
             if datetime.now() > expiry_dt:
                 key_profile["status"] = "Suspended"
-                return JSONResponse(status_code=403, content={"status": "failed", "error": "This allocation key has expired."})
+                return JSONResponse(
+                    status_code=403, 
+                    content={"status": "failed", "error": "This allocation key has expired.", **credit_meta}
+                )
         except Exception:
-            return JSONResponse(status_code=500, content={"status": "failed", "error": "Key validation parsing anomaly encountered."})
+            return JSONResponse(
+                status_code=500, 
+                content={"status": "failed", "error": "Key validation parsing anomaly encountered.", **credit_meta}
+            )
 
     if key_profile["used"] >= key_profile["limit"]:
-        return JSONResponse(status_code=429, content={"status": "failed", "error": "Volumetric threshold usage capacity exhausted for today."})
+        return JSONResponse(
+            status_code=429, 
+            content={"status": "failed", "error": "Volumetric threshold usage capacity exhausted for today.", **credit_meta}
+        )
 
     if "all" not in key_profile["tools"] and tool_name not in key_profile["tools"]:
-        return JSONResponse(status_code=403, content={"status": "failed", "error": f"Token lacks permission metrics for module: [{tool_name}]."})
+        return JSONResponse(
+            status_code=403, 
+            content={"status": "failed", "error": f"Token lacks permission metrics for module: [{tool_name}].", **credit_meta}
+        )
 
-    # Trace contextual queries
+    # Clean trace logs (scrubs master credentials from tracking tables)
     parsed_queries = ", ".join([f"{k}={v}" for k, v in params.items() if k != "key"])
     key_profile["used"] += 1
     REQUEST_LOGS.append({
@@ -78,14 +108,24 @@ async def proxy_gateway(tool_name: str, request: Request):
         "query": parsed_queries if parsed_queries else "Direct Root Probe"
     })
 
-    # Forward to Upstream Infrastructure
+    # Swap client key with master internal key for upstream infrastructure auth
     params["key"] = UPSTREAM_MASTER_KEY
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(f"{UPSTREAM_API_BASE}/{tool_name}", params=params, timeout=15.0)
-            return JSONResponse(content=response.json(), status_code=response.status_code)
+            res_data = response.json()
+            
+            # Enforce clean formatting across successful data vectors
+            if isinstance(res_data, dict):
+                res_data["by"] = DEVELOPER_CREDIT
+                res_data["telegram"] = TELEGRAM_CHANNEL
+                
+            return JSONResponse(content=res_data, status_code=response.status_code)
         except Exception:
-            return JSONResponse(status_code=502, content={"status": "failed", "error": "Upstream proxy interface pipeline timeout.", "developer": DEVELOPER_NAME})
+            return JSONResponse(
+                status_code=502, 
+                content={"status": "failed", "error": "Upstream proxy interface pipeline timeout.", **credit_meta}
+            )
 
 # --- UI CONTROLLERS ---
 @app.get("/", response_class=HTMLResponse)
@@ -124,6 +164,9 @@ async def login_portal(session: Optional[str] = Cookie(None)):
                 </div>
                 <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-mono font-bold uppercase tracking-widest py-4 rounded-xl transition duration-300">INITIALIZE_HANDSHAKE</button>
             </form>
+            <div class="mt-6 text-center">
+                <a href="{TELEGRAM_CHANNEL}" target="_blank" class="text-[10px] font-mono tracking-wider text-zinc-600 hover:text-purple-400 transition">POWERED BY {DEVELOPER_CREDIT}</a>
+            </div>
         </div>
     </body>
     </html>
@@ -193,7 +236,6 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
     
     logs_table_body = "".join(log_rows) if log_rows else '<tr><td colspan="4" class="p-8 text-center text-zinc-600 font-mono text-xs">No active request stream metrics tracking currently.</td></tr>'
 
-    # Escaped curly braces to protect JavaScript execution blocks within Python multi-line formats
     return f"""
     <!DOCTYPE html>
     <html lang="en">
@@ -214,8 +256,12 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
     <body class="bg-[#040406] text-zinc-100 min-h-screen font-sans">
         
         <nav class="border-b border-zinc-800 bg-[#09090c]/90 sticky top-0 z-40 backdrop-blur px-4 py-4 md:px-8 flex justify-between items-center">
-            <span class="text-xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-pink-500 uppercase">{DEVELOPER_NAME} Hub</span>
+            <div class="flex flex-col">
+                <span class="text-xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-pink-500 uppercase">{DEVELOPER_NAME} Hub</span>
+                <span class="text-[9px] font-mono text-zinc-500 tracking-wider">Managed by {DEVELOPER_CREDIT}</span>
+            </div>
             <div class="flex items-center space-x-2">
+                <a href="{TELEGRAM_CHANNEL}" target="_blank" class="border border-pink-500/30 hover:border-pink-500 bg-pink-950/10 text-pink-400 text-xs font-mono py-1.5 px-4 rounded-xl transition">TELEGRAM_CHANNEL</a>
                 <button onclick="revealEndpointsModal()" class="border border-purple-500/30 hover:border-purple-500 bg-purple-950/20 text-purple-400 text-xs font-mono py-1.5 px-4 rounded-xl transition">VIEW_SYSTEM_APIS</button>
                 <a href="/logout" class="border border-zinc-800 hover:border-red-500 text-zinc-500 hover:text-red-400 text-xs font-mono py-1.5 px-4 rounded-xl transition">LOGOUT</a>
             </div>
@@ -256,7 +302,7 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
 
                     <div>
                         <div class="flex justify-between items-center mb-3">
-                            <label class="block text-[10px] font-mono uppercase text-zinc-500">Route AuthorizationPrivileges Scope</label>
+                            <label class="block text-[10px] font-mono uppercase text-zinc-500">Route Authorization Privileges Scope</label>
                             <button type="button" onclick="bulkToggleExecutionModules()" class="text-[10px] font-mono text-pink-400 hover:underline">Select All Available Sub-Tools</button>
                         </div>
                         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2" id="tools_checkbox_grid">
@@ -538,4 +584,5 @@ async def execute_key_destruction(key: str, session: Optional[str] = Cookie(None
     if key in API_KEYS_DB:
         del API_KEYS_DB[key]
     return RedirectResponse(url="/admin", status_code=303)
+
 
