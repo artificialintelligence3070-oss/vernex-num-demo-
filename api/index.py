@@ -4,7 +4,7 @@ import json
 import httpx
 from datetime import datetime
 from typing import List, Optional
-from fastapi import FastAPI, Request, Form, HTTPException, status, Cookie
+from fastapi import FastAPI, Request, Form, HTTPException, Cookie
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 
 app = FastAPI(title="SHAYAN_EXPLORER Premium Gateway Platform")
@@ -15,13 +15,13 @@ CREDIT_TAG = "by @vernexzzz"
 CHANNEL_URL = "https://t.me/shayan_explorer_channel"
 
 UPSTREAM_API_BASE = "https://ft-osint-api.duckdns.org/api"
-UPSTREAM_MASTER_KEY = "vx-osint"
+UPSTREAM_MASTER_KEY = "vernex-6a9dc4fdd5923c40b0aba27bf1e39e3f"
 
 ADMIN_USER = "vernex"
 ADMIN_PASS = "vernex@16vx"
 SESSION_TOKEN = "vx_session_secure_token_2026"
 
-# Expanded tools registry containing all old and newly requested utility routes
+# Integrated Tools Registry
 AVAILABLE_TOOLS = [
     "adv", "paytm", "imei", "calltracer", "upi", "ifsc", "number", "pincode", "ip", 
     "challan", "ff", "bgmi", "snap", "email", "vehicle", "git", "insta", "tg", 
@@ -29,7 +29,6 @@ AVAILABLE_TOOLS = [
     "adharfamily", "bomber"
 ]
 
-# Static in-memory sandbox data store
 API_KEYS_DB = {
     "VERNEX-PREMIUM-MASTER": {
         "name": "Global Live Stream Feed",
@@ -45,7 +44,7 @@ REQUEST_LOGS = []
 def is_authenticated(session: Optional[str] = Cookie(None)) -> bool:
     return session == SESSION_TOKEN
 
-# --- SAFE GATEWAY PROXY WITH DYNAMIC CONTENT CLEANSING ---
+# --- GATEWAY PROXY WITH DYNAMIC CONTENT INTERCEPTION ---
 @app.get("/api/{tool_name}")
 async def proxy_gateway(tool_name: str, request: Request):
     params = dict(request.query_params)
@@ -56,24 +55,23 @@ async def proxy_gateway(tool_name: str, request: Request):
         
     key_profile = API_KEYS_DB[client_key]
     if key_profile["status"] == "Suspended":
-        return JSONResponse(status_code=403, content={"status": "failed", "error": "This access profile has been explicitly suspended."})
+        return JSONResponse(status_code=403, content={"status": "failed", "error": "This access profile has been suspended."})
         
     if key_profile["expiry"] != "Lifetime":
         try:
             expiry_dt = datetime.fromisoformat(key_profile["expiry"])
             if datetime.now() > expiry_dt:
                 key_profile["status"] = "Suspended"
-                return JSONResponse(status_code=403, content={"status": "failed", "error": "This allocation key has hit its lifecycle limit and expired."})
+                return JSONResponse(status_code=403, content={"status": "failed", "error": "Key has expired."})
         except Exception:
-            return JSONResponse(status_code=500, content={"status": "failed", "error": "Key validation parse mismatch anomaly encountered."})
+            return JSONResponse(status_code=500, content={"status": "failed", "error": "Key validation error."})
 
     if key_profile["used"] >= key_profile["limit"]:
-        return JSONResponse(status_code=429, content={"status": "failed", "error": "Volumetric threshold usage capacity exhausted for today."})
+        return JSONResponse(status_code=429, content={"status": "failed", "error": "Usage threshold capacity exhausted for today."})
 
     if "all" not in key_profile["tools"] and tool_name not in key_profile["tools"]:
-        return JSONResponse(status_code=403, content={"status": "failed", "error": f"Token lacks clearance metrics for route: [{tool_name}]."})
+        return JSONResponse(status_code=403, content={"status": "failed", "error": f"Token lacks clearance for route: [{tool_name}]."})
 
-    # Track operational telemetry
     parsed_queries = ", ".join([f"{k}={v}" for k, v in params.items() if k != "key"])
     key_profile["used"] += 1
     REQUEST_LOGS.append({
@@ -83,22 +81,19 @@ async def proxy_gateway(tool_name: str, request: Request):
         "query": parsed_queries if parsed_queries else "Direct Root Probe"
     })
 
-    # Forward request with master key replacement
+    # Swap out user key with master key for upstream request
     params["key"] = UPSTREAM_MASTER_KEY
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(f"{UPSTREAM_API_BASE}/{tool_name}", params=params, timeout=15.0)
-            
-            # --- DYNAMIC RESPONSE SANITIZATION ENGINE ---
             raw_content = response.text
             
-            # Wipe out historical branding strings
+            # --- STRIP OLD BRANDING & INJECT NEW CREDIT TAGS ---
             raw_content = raw_content.replace("@ftgamer2", CREDIT_TAG)
             raw_content = raw_content.replace("https://t.me/lynx_api", CHANNEL_URL)
             raw_content = raw_content.replace("@bronex_ultra", CREDIT_TAG)
             raw_content = raw_content.replace("@@bornex_ultra", CREDIT_TAG)
             
-            # Reassemble response output safely without crashing structural formatting
             try:
                 sanitized_json = json.loads(raw_content)
                 return JSONResponse(content=sanitized_json, status_code=response.status_code)
@@ -106,10 +101,9 @@ async def proxy_gateway(tool_name: str, request: Request):
                 return HTMLResponse(content=raw_content, status_code=response.status_code)
                 
         except Exception:
-            return JSONResponse(status_code=502, content={"status": "failed", "error": "Upstream proxy interface pipeline timeout.", "developer": DEVELOPER_NAME})
+            return JSONResponse(status_code=502, content={"status": "failed", "error": "Upstream proxy interface pipeline timeout."})
 
 # --- USER PORTAL INTERFACES ---
-
 @app.get("/", response_class=HTMLResponse)
 @app.get("/login", response_class=HTMLResponse)
 async def login_portal(session: Optional[str] = Cookie(None)):
@@ -124,29 +118,23 @@ async def login_portal(session: Optional[str] = Cookie(None)):
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Identity Verification Matrix</title>
         <script src="https://cdn.tailwindcss.com"></script>
-        <style>
-            .neon-panel {{ box-shadow: 0 0 40px rgba(168, 85, 247, 0.15), inset 0 0 20px rgba(219, 39, 119, 0.05); }}
-            .glow-input:focus {{ box-shadow: 0 0 15px rgba(168, 85, 247, 0.4); border-color: #a855f7; }}
-            .neon-btn {{ box-shadow: 0 0 20px rgba(219, 39, 119, 0.4); }}
-            .neon-btn:hover {{ box-shadow: 0 0 30px rgba(219, 39, 119, 0.7); }}
-        </style>
     </head>
-    <body class="bg-[#020203] text-zinc-100 flex items-center justify-center min-h-screen p-4 selection:bg-purple-600">
-        <div class="w-full max-w-md bg-[#070709] border border-zinc-800/60 p-8 rounded-[32px] neon-panel relative overflow-hidden">
+    <body class="bg-[#020203] text-zinc-100 flex items-center justify-center min-h-screen p-4">
+        <div class="w-full max-w-md bg-[#070709] border border-zinc-800/60 p-8 rounded-[32px] relative overflow-hidden">
             <div class="text-center mb-8">
-                <h1 class="text-3xl font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-purple-500 via-fuchsia-400 to-pink-500">{DEVELOPER_NAME}</h1>
+                <h1 class="text-3xl font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-pink-500">{DEVELOPER_NAME}</h1>
                 <p class="text-[10px] font-mono text-zinc-500 tracking-widest uppercase mt-2">Centralized Access Gatehouse</p>
             </div>
             <form action="/login" method="POST" class="space-y-5">
                 <div>
                     <label class="block text-[10px] font-mono uppercase tracking-widest text-zinc-400 mb-2">OPERATOR_ID</label>
-                    <input type="text" name="username" required class="w-full bg-[#0c0c0e] border border-zinc-800 rounded-xl px-4 py-3 text-sm transition-all outline-none font-mono text-purple-300 glow-input">
+                    <input type="text" name="username" required class="w-full bg-[#0c0c0e] border border-zinc-800 rounded-xl px-4 py-3 text-sm outline-none font-mono text-purple-300">
                 </div>
                 <div>
                     <label class="block text-[10px] font-mono uppercase tracking-widest text-zinc-400 mb-2">CYPHER_KEY</label>
-                    <input type="password" name="password" required class="w-full bg-[#0c0c0e] border border-zinc-800 rounded-xl px-4 py-3 text-sm transition-all outline-none font-mono text-pink-300 glow-input">
+                    <input type="password" name="password" required class="w-full bg-[#0c0c0e] border border-zinc-800 rounded-xl px-4 py-3 text-sm outline-none font-mono text-pink-300">
                 </div>
-                <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-mono font-bold uppercase tracking-widest py-4 rounded-xl transition duration-300 neon-btn">INITIALIZE_HANDSHAKE</button>
+                <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-mono font-bold uppercase tracking-widest py-4 rounded-xl transition duration-300">INITIALIZE_HANDSHAKE</button>
             </form>
         </div>
     </body>
@@ -174,7 +162,7 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
         
     tool_options_html = "".join([f"""
     <label class="flex items-center space-x-3 bg-[#0c0c0e] border border-zinc-900 p-3 rounded-xl cursor-pointer hover:border-zinc-800 transition">
-        <input type="checkbox" name="tools" value="{t}" class="rounded border-zinc-800 bg-zinc-900 text-purple-600 focus:ring-purple-500 focus:ring-offset-0">
+        <input type="checkbox" name="tools" value="{t}" class="rounded border-zinc-800 bg-zinc-900 text-purple-600 focus:ring-purple-500">
         <span class="text-xs font-mono text-zinc-400 uppercase">{t}</span>
     </label>
     """ for t in AVAILABLE_TOOLS])
@@ -194,10 +182,10 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
             <td class="p-4 max-w-[220px]"><div class="flex flex-wrap gap-1">{tool_badges}</div></td>
             <td class="p-4 text-right">
                 <div class="inline-flex gap-1.5">
-                    <button onclick="triggerEditModal('{k}', '{v['name']}', {v['limit']}, '{','.join(v['tools'])}')" class="bg-purple-600/10 hover:bg-purple-600 border border-purple-500/20 px-2 py-1 text-[10px] font-mono rounded text-purple-400 hover:text-white transition">EDIT</button>
-                    <a href="/admin/reset/{k}" class="bg-pink-600/10 hover:bg-pink-600 border border-pink-500/20 px-2 py-1 text-[10px] font-mono rounded text-pink-400 hover:text-white transition">RESET</a>
-                    <a href="/admin/toggle/{k}" class="bg-amber-600/10 hover:bg-amber-600 border border-amber-500/20 px-2 py-1 text-[10px] font-mono rounded text-amber-400 hover:text-white transition">TOGGLE</a>
-                    <a href="/admin/delete/{k}" onclick="return confirm('Execute permanent token removal?')" class="bg-red-600/10 hover:bg-red-600 border border-red-500/20 px-2 py-1 text-[10px] font-mono rounded text-red-400 hover:text-white transition">DEL</a>
+                    <button onclick="triggerEditModal('{k}', '{v['name']}', {v['limit']}, '{','.join(v['tools'])}')" class="bg-purple-600/10 hover:bg-purple-600 border border-purple-500/20 px-2 py-1 text-[10px] font-mono rounded text-purple-400 transition">EDIT</button>
+                    <a href="/admin/reset/{k}" class="bg-pink-600/10 hover:bg-pink-600 border border-pink-500/20 px-2 py-1 text-[10px] font-mono rounded text-pink-400 transition">RESET</a>
+                    <a href="/admin/toggle/{k}" class="bg-amber-600/10 hover:bg-amber-600 border border-amber-500/20 px-2 py-1 text-[10px] font-mono rounded text-amber-400 transition">TOGGLE</a>
+                    <a href="/admin/delete/{k}" onclick="return confirm('Delete token?')" class="bg-red-600/10 hover:bg-red-600 border border-red-500/20 px-2 py-1 text-[10px] font-mono rounded text-red-400 transition">DEL</a>
                 </div>
             </td>
         </tr>
@@ -208,14 +196,14 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
     for log in reversed(REQUEST_LOGS):
         log_rows.append(f"""
         <tr class="border-b border-zinc-900/40 text-xs font-mono hover:bg-[#050507] transition">
-            <td class="p-3 text-zinc-500 whitespace-nowrap">{log['time']}</td>
-            <td class="p-3 text-purple-400 select-all font-bold">{log['key']}</td>
+            <td class="p-3 text-zinc-500 commit-time">{log['time']}</td>
+            <td class="p-3 text-purple-400 select-all">{log['key']}</td>
             <td class="p-3 text-pink-400 font-bold uppercase">{log['tool']}</td>
-            <td class="p-3 text-zinc-300 max-w-sm truncate select-all bg-zinc-950/50 rounded" title="{log['query']}">{log['query']}</td>
+            <td class="p-3 text-zinc-300 max-w-sm truncate select-all" title="{log['query']}">{log['query']}</td>
         </tr>
         """)
     
-    logs_table_body = "".join(log_rows) if log_rows else '<tr><td colspan="4" class="p-8 text-center text-zinc-600 font-mono text-xs">Awaiting structural telemetry stream traffic data...</td></tr>'
+    logs_table_body = "".join(log_rows) if log_rows else '<tr><td colspan="4" class="p-8 text-center text-zinc-600 font-mono text-xs">No execution logs found...</td></tr>'
 
     return f"""
     <!DOCTYPE html>
@@ -225,65 +213,53 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Control Terminal Workspace</title>
         <script src="https://cdn.tailwindcss.com"></script>
-        <style>
-            .neon-glow {{ box-shadow: 0 0 35px rgba(168, 85, 247, 0.1); }}
-            @keyframes critical-blink {{
-                0%, 100% {{ color: #ff0055; text-shadow: 0 0 12px rgba(255, 0, 85, 0.6); opacity: 1; }}
-                50% {{ color: #4a0018; text-shadow: 0 0 0px transparent; opacity: 0.3; }}
-            }}
-            .expiry-alert-active {{ animation: critical-blink 1s infinite; font-weight: 900; }}
-        </style>
     </head>
-    <body class="bg-[#010102] text-zinc-100 min-h-screen font-sans selection:bg-purple-600">
-        
+    <body class="bg-[#010102] text-zinc-100 min-h-screen">
         <nav class="border-b border-zinc-900 bg-[#040406]/90 sticky top-0 z-40 backdrop-blur px-4 py-4 md:px-8 flex justify-between items-center">
-            <div class="flex flex-col md:flex-row items-start md:items-center gap-1 md:gap-3">
+            <div class="flex items-center gap-3">
                 <span class="text-xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-pink-500 uppercase">{DEVELOPER_NAME}</span>
                 <span class="text-[9px] font-mono text-zinc-500 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded uppercase tracking-wider">{CREDIT_TAG}</span>
             </div>
             <div class="flex items-center space-x-2">
-                <button onclick="revealEndpointsModal()" class="border border-purple-500/30 hover:border-purple-500 bg-purple-950/20 hover:bg-purple-900/40 text-purple-400 hover:text-white text-xs font-mono py-1.5 px-4 rounded-xl transition duration-200">VIEW_SYSTEM_APIS</button>
-                <a href="/logout" class="border border-zinc-800 hover:border-red-500/40 hover:bg-red-950/20 text-zinc-500 hover:text-red-400 text-xs font-mono py-1.5 px-4 rounded-xl transition duration-200">LOGOUT</a>
+                <button onclick="revealEndpointsModal()" class="border border-purple-500/30 hover:border-purple-500 bg-purple-950/20 text-purple-400 text-xs font-mono py-1.5 px-4 rounded-xl transition">VIEW_SYSTEM_APIS</button>
+                <a href="/logout" class="border border-zinc-800 text-zinc-500 hover:text-red-400 text-xs font-mono py-1.5 px-4 rounded-xl transition">LOGOUT</a>
             </div>
         </nav>
 
         <div class="max-w-7xl mx-auto p-4 md:p-8 space-y-8">
-            
-            <section class="bg-[#060608] border border-zinc-900 rounded-3xl p-6 neon-glow">
-                <h2 class="text-sm font-mono uppercase tracking-widest text-purple-400 mb-6 flex items-center gap-2">
-                    <span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Provision Key Parameters
-                </h2>
+            <section class="bg-[#060608] border border-zinc-900 rounded-3xl p-6">
+                <h2 class="text-sm font-mono uppercase tracking-widest text-purple-400 mb-6">Provision Key Parameters</h2>
                 <form action="/admin/create" method="POST" class="space-y-6">
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         <div>
                             <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Target Owner Name</label>
-                            <input type="text" name="name" required placeholder="Client Profile Alias" class="w-full bg-[#0b0b0d] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none focus:border-purple-500 transition font-mono">
+                            <input type="text" name="name" required class="w-full bg-[#0b0b0d] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs font-mono">
                         </div>
                         <div>
                             <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Custom Access Key Text</label>
-                            <input type="text" name="custom_key" placeholder="System auto generates if blank" class="w-full bg-[#0b0b0d] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none focus:border-purple-500 transition font-mono">
+                            <input type="text" name="custom_key" class="w-full bg-[#0b0b0d] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs font-mono">
                         </div>
                         <div>
-                            <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Daily Quota Speed Threshold</label>
-                            <input type="number" name="limit" required placeholder="Max queries / day" class="w-full bg-[#0b0b0d] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none focus:border-purple-500 transition font-mono">
+                            <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Daily Quota Limit</label>
+                            <input type="number" name="limit" required class="w-full bg-[#0b0b0d] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs font-mono">
                         </div>
                         <div>
-                            <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Lifecycle Lifespan Plan</label>
+                            <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Lifespan Plan</label>
                             <div class="flex items-center space-x-3 bg-[#0b0b0d] border border-zinc-800 h-[38px] rounded-xl px-4">
-                                <input type="checkbox" id="lifetime_toggle" name="lifetime" value="true" onchange="adjustExpiryConstraintState(this)" class="rounded border-zinc-800 bg-zinc-900 text-purple-600 focus:ring-purple-500">
-                                <label for="lifetime_toggle" class="text-xs font-mono text-zinc-400 cursor-pointer select-none">LIFETIME ACCESS TIER</label>
+                                <input type="checkbox" id="lifetime_toggle" name="lifetime" value="true" onchange="adjustExpiryConstraintState(this)">
+                                <label for="lifetime_toggle" class="text-xs font-mono text-zinc-400 select-none cursor-pointer">LIFETIME ACCESS TIER</label>
                             </div>
                         </div>
                     </div>
 
                     <div id="expiry_date_container">
-                        <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Precise Localized Expiration Clock</label>
-                        <input type="datetime-local" id="expiry_input" name="expiry" class="bg-[#0b0b0d] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none focus:border-purple-500 transition font-mono w-full md:w-1/4">
+                        <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Expiration Clock</label>
+                        <input type="datetime-local" id="expiry_input" name="expiry" class="bg-[#0b0b0d] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs font-mono w-full md:w-1/4">
                     </div>
 
                     <div>
                         <div class="flex justify-between items-center mb-3">
-                            <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500">Route Authorization Network Privileges</label>
+                            <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500">Route Authorization Privileges</label>
                             <button type="button" onclick="bulkToggleExecutionModules()" class="text-[10px] font-mono uppercase text-pink-400 hover:underline">Select All Internal Routes</button>
                         </div>
                         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2" id="tools_checkbox_grid">
@@ -292,26 +268,24 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                     </div>
 
                     <div class="flex justify-end pt-2">
-                        <button type="submit" class="w-full md:w-auto bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-mono font-bold uppercase tracking-widest py-3 px-8 rounded-xl transition duration-300">PROVISION_KEY</button>
+                        <button type="submit" class="w-full md:w-auto bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-mono font-bold uppercase tracking-widest py-3 px-8 rounded-xl">PROVISION_KEY</button>
                     </div>
                 </form>
             </section>
 
-            <section class="bg-[#060608] border border-zinc-900 rounded-3xl p-6 neon-glow overflow-hidden">
-                <h2 class="text-sm font-mono uppercase tracking-widest text-pink-400 mb-6 flex items-center gap-2">
-                    <span class="w-1.5 h-1.5 rounded-full bg-pink-500"></span> Live Client Matrix Registries
-                </h2>
+            <section class="bg-[#060608] border border-zinc-900 rounded-3xl p-6 overflow-hidden">
+                <h2 class="text-sm font-mono uppercase tracking-widest text-pink-400 mb-6">Live Client Registries</h2>
                 <div class="overflow-x-auto w-full">
                     <table class="w-full text-left border-collapse">
                         <thead>
                             <tr class="border-b border-zinc-900 text-[10px] font-mono text-zinc-500 uppercase tracking-wider">
                                 <th class="p-4">Owner Profile</th>
-                                <th class="p-4">Authorization Token Key</th>
+                                <th class="p-4">Authorization Token</th>
                                 <th class="p-4">Live Expiry Stream</th>
-                                <th class="p-4">Usage Counter Volumetric</th>
+                                <th class="p-4">Usage Counter</th>
                                 <th class="p-4">Status</th>
                                 <th class="p-4">Route Scopes</th>
-                                <th class="p-4 text-right">System Configuration Interventions</th>
+                                <th class="p-4 text-right">Interventions</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-zinc-900/60">
@@ -321,10 +295,8 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                 </div>
             </section>
 
-            <section class="bg-[#060608] border border-zinc-900 rounded-3xl p-6 neon-glow">
-                <h2 class="text-sm font-mono uppercase tracking-widest text-amber-400 mb-6 flex items-center gap-2">
-                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Core Data Traffic Logs Stream
-                </h2>
+            <section class="bg-[#060608] border border-zinc-900 rounded-3xl p-6">
+                <h2 class="text-sm font-mono uppercase tracking-widest text-amber-400 mb-6">Core Traffic Log Feed</h2>
                 <div class="overflow-x-auto w-full max-h-96">
                     <table class="w-full text-left border-collapse">
                         <thead>
@@ -343,20 +315,18 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
             </section>
         </div>
 
+        <!-- ENDPOINTS MODAL WITH SECURE BASE PLACEHOLDERS -->
         <div id="endpoints_modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div class="bg-[#060608] border border-zinc-800 w-full max-w-3xl rounded-3xl p-6 relative max-h-[85vh] flex flex-col">
                 <div class="flex justify-between items-center mb-6">
-                    <div>
-                        <h3 class="text-sm font-mono uppercase tracking-widest text-purple-400">Available System API Paths</h3>
-                        <p class="text-[10px] font-mono text-zinc-500 mt-1">Append structural access credentials parameters manually to pass gateway firewalls.</p>
-                    </div>
+                    <h3 class="text-sm font-mono uppercase tracking-widest text-purple-400">Available System API Paths</h3>
                     <button onclick="dismissEndpointsModal()" class="text-zinc-500 hover:text-white font-mono text-xs border border-zinc-800 px-3 py-1 rounded-xl">&times; CLOSE</button>
                 </div>
-                <div class="overflow-y-auto space-y-2 flex-1 p-1 bg-[#010102] rounded-2xl" id="endpoints_render_view">
-                    </div>
+                <div class="overflow-y-auto space-y-2 flex-1 p-1 bg-[#010102] rounded-2xl" id="endpoints_render_view"></div>
             </div>
         </div>
 
+        <!-- EDIT MODULE FORM MODAL -->
         <div id="edit_modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div class="bg-[#060608] border border-zinc-800 w-full max-w-xl rounded-3xl p-6 relative">
                 <h3 class="text-sm font-mono uppercase tracking-widest text-purple-400 mb-6">Modify Gateway Authorization Profiles</h3>
@@ -367,18 +337,18 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                         <input type="text" name="name" id="edit_name" required class="w-full bg-[#0b0b0d] border border-zinc-800 rounded-xl px-4 py-2 text-xs text-zinc-200 outline-none font-mono">
                     </div>
                     <div>
-                        <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-1">Recalibrate Transmit Limit</label>
+                        <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-1">Recalibrate Limit</label>
                         <input type="number" name="limit" id="edit_limit" required class="w-full bg-[#0b0b0d] border border-zinc-800 rounded-xl px-4 py-2 text-xs text-zinc-200 outline-none font-mono">
                     </div>
                     <div>
-                        <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Adjust System Tool Clearances</label>
+                        <label class="block text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-2">Adjust Tool Clearances</label>
                         <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-40 overflow-y-auto p-2 bg-[#0b0b0d] border border-zinc-800 rounded-xl">
                             {"".join([f'<div><label class="flex items-center space-x-2 text-xs font-mono text-zinc-500 cursor-pointer"><input type="checkbox" name="tools" value="{t}" id="modal_tool_{t}" class="rounded border-zinc-800 bg-zinc-900 text-purple-600"> <span class="uppercase">{t}</span></label></div>' for t in AVAILABLE_TOOLS])}
                         </div>
                     </div>
                     <div class="flex justify-end space-x-2 pt-4">
-                        <button type="button" onclick="closeEditModal()" class="border border-zinc-800 hover:bg-zinc-900 px-4 py-2 rounded-xl text-xs font-mono text-zinc-500 transition">Cancel</button>
-                        <button type="submit" class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-xl text-xs font-mono font-bold uppercase transition">Save Profile Changes</button>
+                        <button type="button" onclick="closeEditModal()" class="border border-zinc-800 px-4 py-2 rounded-xl text-xs font-mono text-zinc-500">Cancel</button>
+                        <button type="submit" class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-xl text-xs font-mono font-bold uppercase">Save Changes</button>
                     </div>
                 </form>
             </div>
@@ -425,7 +395,6 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                 document.getElementById('edit_modal').classList.add('hidden');
             }}
 
-            // RENDER SYSTEM ENDPOINTS DYNAMIC DATA REFERENCES WITHOUT EXPLICIT INTERNAL KEYS
             function revealEndpointsModal() {{
                 const deploymentHostOrigin = window.location.origin;
                 const renderTargetNode = document.getElementById('endpoints_render_view');
@@ -433,7 +402,7 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                 
                 const toolsListArray = {AVAILABLE_TOOLS};
                 
-                // Blueprint route mock configuration settings for scannable user guidelines
+                // Meticulous mapping profiles to safeguard identifiers via strict Redaction policy
                 const routeBlueprints = {{
                     "pk": "num=0000000000",
                     "name": "name=abhiraaj",
@@ -449,14 +418,14 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
 
                 toolsListArray.forEach(t => {{
                     const structuralParameters = routeBlueprints[t] || "query=example_data";
-                    const fullyFormedPath = `${{deploymentHostOrigin}}/api/${{t}}?key=&${{structuralParameters}}`;
+                    const fullyFormedPath = `${{deploymentHostOrigin}}/api/${{t}}?key=YOUR_KEY&${{structuralParameters}}`;
                     
                     renderTargetNode.innerHTML += `
                         <div class="p-3 border border-zinc-900 bg-[#060608] rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 font-mono text-xs">
                             <span class="text-purple-400 font-extrabold uppercase tracking-wide px-2 py-0.5 bg-purple-500/10 rounded border border-purple-500/20 min-w-[110px] text-center">${{t}}</span>
                             <div class="flex items-center gap-2 w-full md:w-auto flex-1">
-                                <input type="text" readonly value="${{fullyFormedPath}}" class="bg-[#010102] border border-zinc-800 text-zinc-400 px-3 py-1.5 rounded-lg text-[11px] w-full outline-none font-mono selection:bg-purple-600">
-                                <button onclick="navigator.clipboard.writeText('${{fullyFormedPath}}'); alert('Target endpoint copied.')" class="bg-zinc-950 border border-zinc-800 hover:border-zinc-700 px-3 py-1.5 rounded-lg text-zinc-300 font-sans text-xs shrink-0 transition">Copy</button>
+                                <input type="text" readonly value="${{fullyFormedPath}}" class="bg-[#010102] border border-zinc-800 text-zinc-400 px-3 py-1.5 rounded-lg text-[11px] w-full outline-none font-mono">
+                                <button onclick="navigator.clipboard.writeText('${{fullyFormedPath}}'); alert('Copied.')" class="bg-zinc-950 border border-zinc-800 px-3 py-1.5 rounded-lg text-zinc-300 font-sans text-xs shrink-0">Copy</button>
                             </div>
                         </div>
                     `;
@@ -468,7 +437,6 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                 document.getElementById('endpoints_modal').classList.add('hidden');
             }}
 
-            // CHRONOS DYNAMIC NEON COUNTDOWN ENGINE WITH LIFETIME PROTECTION RULES
             function runChronosTrackingEngine() {{
                 const activeRegistryRows = document.querySelectorAll('.countdown-container');
                 
@@ -500,14 +468,7 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                         const parseMinutes = Math.floor((trackingTimeDelta % (1000 * 60 * 60)) / (1000 * 60));
                         const parseSeconds = Math.floor((trackingTimeDelta % (1000 * 60)) / 1000);
                         
-                        const formattedClockOutput = `${{parseHours}}H ${{parseMinutes}}M ${{parseSeconds}}S`;
-                        
-                        // Active blink trigger context applied strictly inside critical 24-Hour window bounds
-                        if (parseHours < 24) {{
-                            rowNode.innerHTML = `<span class="expiry-alert-active">${{formattedClockOutput}}</span>`;
-                        }} else {{
-                            rowNode.innerHTML = `<span class="text-zinc-400 font-mono">${{formattedClockOutput}}</span>`;
-                        }}
+                        rowNode.innerHTML = `<span class="text-zinc-400 font-mono">${{parseHours}}H ${{parseMinutes}}M ${{parseSeconds}}S</span>`;
                     }});
                 }, 1000);
             }}
@@ -517,8 +478,6 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
     </body>
     </html>
     """
-
-# --- SYSTEM MODIFICATION REGISTRY HANDLERS ---
 
 @app.post("/admin/create")
 async def process_key_generation(
