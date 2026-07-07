@@ -1,521 +1,541 @@
 import os
 import json
+import time
 import uuid
 import requests
-from datetime import datetime
-from flask import Flask, request, jsonify, redirect, url_for, session, render_template_string
+from flask import Flask, request, jsonify, render_template_string, redirect, session, url_for
 
 app = Flask(__name__)
-app.secret_key = "shayan_explorer_matrix_gateway_core_secure_vault"
+app.secret_key = "vx_secret_glow_core_2026"
 
-# Administrative Access Configuration
+# Absolute persistence path inside writable /tmp or local fallback
+DB_FILE = "/tmp/vx_osint_database.json" if os.path.exists("/tmp") else "vx_osint_database.json"
+
+def load_db():
+    if not os.path.exists(DB_FILE):
+        default_data = {
+            "keys": {},
+            "logs": []
+        }
+        with open(DB_FILE, "w") as f:
+            json.dump(default_data, f)
+        return default_data
+    try:
+        with open(DB_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {"keys": {}, "logs": []}
+
+def save_db(data):
+    with open(DB_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+# Native Master Target Endpoint Rules
+TARGET_API_BASE = "https://ft-osint-api.duckdns.org/api"
+UPSTREAM_KEY = "vx-osint"
+
+API_ENDPOINTS = {
+    "adv": "adv?key={key}&num={num}",
+    "paytm": "paytm?key={key}&num={num}",
+    "imei": "imei?key={key}&imei={imei}",
+    "calltracer": "calltracer?key={key}&num={num}",
+    "upi": "upi?key={key}&upi={upi}",
+    "ifsc": "ifsc?key={key}&ifsc={ifsc}",
+    "number": "number?key={key}&num={num}",
+    "pincode": "pincode?key={key}&pin={pin}",
+    "ip": "ip?key={key}&ip={ip}",
+    "challan": "challan?key={key}&vehicle={vehicle}",
+    "ff": "ff?key={key}&uid={uid}",
+    "bgmi": "bgmi?key={key}&uid={uid}",
+    "snap": "snap?key={key}&username={username}",
+    "email": "email?key={key}&email={email}",
+    "vehicle": "vehicle?key={key}&vehicle={vehicle}",
+    "git": "git?key={key}&username={username}",
+    "insta": "insta?key={key}&username={username}",
+    "tg": "tg?key={key}&info={info}",
+    "tgidinfo": "tgidinfo?key={key}&id={id}",
+    "numleak": "numleak?key={key}&num={num}"
+}
+
+# ================= CORE API ROUTE PROXY =================
+@app.route("/api/<endpoint_name>", methods=["GET"])
+def proxy_api(endpoint_name):
+    if endpoint_name not in API_ENDPOINTS:
+        return jsonify({"status": "error", "message": "Unknown endpoint target."}), 404
+        
+    user_key = request.args.get("key")
+    if not user_key:
+        return jsonify({"status": "error", "message": "Authentication Key is missing. Purchase key from SHAYAN_EXPLORER."}), 401
+
+    db = load_db()
+    if user_key not in db["keys"]:
+        return jsonify({"status": "error", "message": "The key is invalid. Please buy a new key."}), 401
+
+    key_info = db["keys"][user_key]
+
+    # Check Suspension Status
+    if key_info.get("suspended", False):
+        return jsonify({"status": "error", "message": "The key is suspended by admin."}), 403
+
+    # Check Scope Permissions
+    allowed_tools = key_info.get("allowed_tools", "all")
+    if allowed_tools != "all" and endpoint_name not in allowed_tools:
+        return jsonify({"status": "error", "message": f"This key does not have access to [{endpoint_name}]. Upgrade your plan."}), 403
+
+    # Check Temporal Expiry
+    expiry_type = key_info.get("expiry_type", "lifetime")
+    if expiry_type == "date":
+        expire_timestamp = key_info.get("expiry_timestamp", 0)
+        if time.time() > expire_timestamp:
+            return jsonify({"status": "error", "message": "The key is expired. Please buy a new key."}), 401
+
+    # Check Request Usage Limits
+    max_limit = int(key_info.get("limit", 0))
+    current_usage = int(key_info.get("usage", 0))
+    if max_limit > 0 and current_usage >= max_limit:
+        return jsonify({"status": "error", "message": "Key request limit reached. Rate limit exceeded."}), 429
+
+    # Update state usage metric safely
+    db["keys"][user_key]["usage"] = current_usage + 1
+    
+    # Track diagnostic logs safely
+    search_query = json.dumps({k: v for k, v in request.args.items() if k != 'key'})
+    db["logs"].append({
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "key_name": key_info.get("name", "Unknown"),
+        "key": user_key,
+        "endpoint": endpoint_name,
+        "query": search_query
+    })
+    save_db(db)
+
+    # Build backend target upstream URL dynamically
+    param_template = API_ENDPOINTS[endpoint_name]
+    query_params = {k: v for k, v in request.args.items() if k != 'key'}
+    query_params['key'] = UPSTREAM_KEY
+
+    try:
+        target_url = f"{TARGET_API_BASE}/{param_template.format(**query_params)}"
+    except KeyError as e:
+        return jsonify({"status": "error", "message": f"Missing query parameter: {str(e)}"}), 400
+
+    try:
+        resp = requests.get(target_url, timeout=12)
+        return (resp.text, resp.status_code, {"Content-Type": "application/json"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": "Internal gateway routing lookup error.", "details": str(e)}), 500
+
+
+# ================= DASHBOARD CONTROLLER ROUTING =================
 ADMIN_USER = "vernex"
 ADMIN_PASS = "vernex@16vx"
 
-# Downstream Endpoint Targets
-TARGET_BASE_API = "https://ft-osint-api.duckdns.org/api"
-MASTER_VENDOR_KEY = "vx-osint"
+@app.route("/", methods=["GET", "POST"])
+def login_dashboard():
+    if session.get("logged_in"):
+        return redirect(url_for("admin_panel"))
+        
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        if username == ADMIN_USER and password == ADMIN_PASS:
+            session["logged_in"] = True
+            return redirect(url_for("admin_panel"))
+        else:
+            error = "Invalid matrix administrative credentials."
+            
+    return render_template_string(LOGIN_HTML, error=error)
 
-# Supported Routing Registry Map
-SUPPORTED_TOOLS = {
-    "adv": "num", "paytm": "num", "imei": "imei", "calltracer": "num",
-    "upi": "upi", "ifsc": "ifsc", "number": "num", "pincode": "pin",
-    "ip": "ip", "challan": "vehicle", "ff": "uid", "bgmi": "uid",
-    "snap": "username", "email": "email", "vehicle": "vehicle", "git": "username",
-    "insta": "username", "tg": "info", "tgidinfo": "id", "numleak": "num",
-    "pk": "num", "name": "name", "aadhar": "num", "numtoupi": "num",
-    "pan": "pan", "veh2num": "vehicle", "adharfamily": "num", "bomber": "number"
-}
+@app.route("/dashboard")
+def admin_panel():
+    if not session.get("logged_in"):
+        return redirect(url_for("login_dashboard"))
+    db = load_db()
+    return render_template_string(DASHBOARD_HTML, db=db, endpoints=API_ENDPOINTS.keys())
 
-# -----------------------------------------------------------------------------
-# PERSISTENCE INTERFACE LAYER
-# To ensure keys remain valid across serverless instances, implement a database connection.
-# For testing purposes, this fallback layer uses an environment variable variable map.
-# -----------------------------------------------------------------------------
-CORE_STATE_CACHE = {
-    "keys": {},
-    "logs": []
-}
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login_dashboard"))
 
-def fetch_active_state():
-    """Reads state variables from the environment layer or fallback memory cache."""
-    env_data = os.environ.get("GATEWAY_DATABASE_STATE")
-    if env_data:
-        try:
-            return json.loads(env_data)
-        except Exception:
-            pass
-    return CORE_STATE_CACHE
-
-def commit_state_changes(state_payload):
-    """Saves updated data states back to the persistence cache layer."""
-    global CORE_STATE_CACHE
-    CORE_STATE_CACHE = state_payload
-    # Integration point: Add code here to write back to your external database provider API.
-
-def evaluate_key_expiration():
-    """Checks active keys and marks them as expired if they pass their deadline."""
-    state = fetch_active_state()
-    updated = False
-    now = datetime.now()
+@app.route("/action/generate", methods=["POST"])
+def action_generate():
+    if not session.get("logged_in"): return jsonify({"status": "unauthorized"}), 401
     
-    for key, metadata in list(state["keys"].items()):
-        if metadata["status"] == "active" and not metadata.get("is_lifetime", False):
-            expiry_dt = datetime.strptime(metadata["expiry"], "%Y-%m-%dT%H:%M")
-            if now > expiry_dt:
-                state["keys"][key]["status"] = "expired"
-                updated = True
-                
-    if updated:
-        commit_state_changes(state)
+    name = request.form.get("name", "Unnamed Key")
+    limit = int(request.form.get("limit", 0))
+    expiry_type = request.form.get("expiry_type", "lifetime")
+    days = float(request.form.get("expiry_days", 0)) if expiry_type == "date" else 0
+    tools_scope = request.form.getlist("tools")
+    
+    generated_key = "VX-" + str(uuid.uuid4()).replace("-", "").upper()[:16]
+    expiry_timestamp = time.time() + (days * 86400) if expiry_type == "date" else 0
+    
+    db = load_db()
+    db["keys"][generated_key] = {
+        "name": name,
+        "limit": limit,
+        "usage": 0,
+        "expiry_type": expiry_type,
+        "expiry_timestamp": expiry_timestamp,
+        "allowed_tools": "all" if "all" in tools_scope or not tools_scope else tools_scope,
+        "suspended": False
+    }
+    save_db(db)
+    return redirect(url_for("admin_panel"))
 
-# -----------------------------------------------------------------------------
-# PITCH BLACK HIGH-PERFORMANCE RESPONSIVE USER INTERFACE
-# -----------------------------------------------------------------------------
-UI_TEMPLATE = """
+@app.route("/action/modify/<key>", methods=["POST"])
+def action_modify(key):
+    if not session.get("logged_in"): return jsonify({"status": "unauthorized"}), 401
+    db = load_db()
+    if key in db["keys"]:
+        op = request.form.get("op")
+        if op == "suspend":
+            db["keys"][key]["suspended"] = True
+        elif op == "unsuspend":
+            db["keys"][key]["suspended"] = False
+        elif op == "delete":
+            del db["keys"][key]
+        elif op == "update":
+            db["keys"][key]["name"] = request.form.get("name")
+            db["keys"][key]["limit"] = int(request.form.get("limit", 0))
+            expiry_type = request.form.get("expiry_type")
+            db["keys"][key]["expiry_type"] = expiry_type
+            if expiry_type == "date":
+                days = float(request.form.get("expiry_days", 0))
+                db["keys"][key]["expiry_timestamp"] = time.time() + (days * 86400)
+            tools_scope = request.form.getlist("tools")
+            db["keys"][key]["allowed_tools"] = "all" if "all" in tools_scope or not tools_scope else tools_scope
+        save_db(db)
+    return redirect(url_for("admin_panel"))
+
+# ================= DESIGN UI FRAMEWORKS (2026 NEO-GLOW AESTHETIC) =================
+LOGIN_HTML = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SHAYAN_EXPLORER // Control Core</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SHAYAN_EXPLORER | Secure Terminal Auth</title>
     <style>
-        :root {
-            --bg-solid: #000000;
-            --card-bg: #07090e;
-            --input-bg: #020305;
-            --cyan-neon: #00f0ff;
-            --cyan-dark: #004a52;
-            --text-pure: #ffffff;
-            --text-dim: #64748b;
-            --status-green: #00ff66;
-            --status-red: #ff2a4b;
-            --status-orange: #ff9f00;
-        }
-
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif; }
-        body { background-color: var(--bg-solid); color: var(--text-pure); padding: 12px; min-height: 100vh; }
-
-        .container { max-width: 1340px; margin: 0 auto; }
-
-        header {
-            background: var(--card-bg); border: 1px solid #111827; padding: 20px;
-            border-radius: 12px; display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;
-            box-shadow: 0 0 30px rgba(0, 240, 255, 0.02);
-        }
-
-        .header-main h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.5px; }
-        .header-main p { color: var(--text-dim); font-size: 0.8rem; margin-top: 2px; }
-        .dev-tag { color: var(--cyan-neon); font-weight: 700; }
-
-        /* Portal Security Interface */
-        .login-frame { max-width: 400px; margin: 100px auto; padding: 30px; background: var(--card-bg); border: 1px solid #111827; border-radius: 16px; }
-        .login-header { text-align: center; margin-bottom: 25px; }
-        .login-header h2 { color: var(--cyan-neon); font-size: 1.4rem; font-weight: 800; }
-
-        .input-group { margin-bottom: 16px; }
-        .input-group label { display: block; margin-bottom: 6px; font-size: 0.75rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
-        
-        input[type="text"], input[type="password"], input[type="number"], input[type="datetime-local"], select {
-            width: 100%; padding: 14px; background: var(--input-bg); border: 1px solid #1e293b;
-            color: #fff; border-radius: 8px; outline: none; font-size: 0.95rem; transition: all 0.2s ease;
-        }
-        input:focus, select:focus { border-color: var(--cyan-neon); box-shadow: 0 0 10px rgba(0, 240, 255, 0.15); }
-
-        .toggle-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
-        .toggle-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--cyan-neon); }
-
-        /* Button Component Matrix */
-        .btn {
-            display: inline-flex; align-items: center; justify-content: center; padding: 12px 20px;
-            background: #0d1527; border: 1px solid var(--cyan-neon); color: var(--cyan-neon);
-            font-size: 0.85rem; font-weight: 700; border-radius: 8px; cursor: pointer; transition: all 0.2s ease; text-decoration: none;
-        }
-        .btn:hover { background: var(--cyan-neon); color: var(--bg-solid); box-shadow: 0 0 15px rgba(0, 240, 255, 0.4); }
-        .btn-danger { border-color: var(--status-red); color: var(--status-red); background: transparent; }
-        .btn-danger:hover { background: var(--status-red); color: #fff; box-shadow: 0 0 15px rgba(255, 42, 75, 0.4); }
-
-        /* Responsive Layout Matrix Grid */
-        .layout-grid { display: grid; grid-template-columns: 1fr; gap: 20px; margin-bottom: 20px; }
-        
-        /* Device-Specific Adaptations for Desktop viewports */
-        @media(min-width: 1024px) {
-            body { padding: 24px; }
-            header { flex-direction: row; justify-content: space-between; align-items: center; padding: 24px; }
-            .layout-grid { grid-template-columns: 1.10fr 0.90fr; gap: 24px; }
-            .header-main h1 { font-size: 1.75rem; }
-        }
-
-        .card { background: var(--card-bg); border: 1px solid #111827; padding: 22px; border-radius: 14px; }
-        .card-title { font-size: 1rem; font-weight: 700; padding-bottom: 12px; margin-bottom: 18px; border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; }
-
-        .selector-box { max-height: 140px; overflow-y: auto; background: var(--input-bg); border: 1px solid #1e293b; padding: 10px; border-radius: 8px; }
-        .selector-item { display: flex; align-items: center; margin-bottom: 8px; font-size: 0.85rem; color: #cbd5e1; }
-        .selector-item input { margin-right: 10px; width: 15px; height: 15px; accent-color: var(--cyan-neon); }
-
-        /* Interactive Route Endpoint Rows */
-        .viewport-scroll { max-height: 400px; overflow-y: auto; padding-right: 4px; }
-        .route-strip { background: var(--input-bg); border-radius: 8px; padding: 12px; margin-bottom: 10px; border-left: 3px solid var(--cyan-neon); display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-        .route-details { overflow: hidden; width: 75%; }
-        .route-header { font-size: 0.8rem; font-weight: 700; color: var(--cyan-neon); text-transform: uppercase; }
-        .route-link { font-size: 0.75rem; color: var(--text-dim); white-space: nowrap; overflow-x: auto; margin-top: 2px; font-family: monospace; }
-
-        /* Responsive Data Registry Layouts */
-        .table-wrap { width: 100%; overflow-x: auto; border-radius: 8px; background: var(--input-bg); }
-        table { width: 100%; border-collapse: collapse; text-align: left; }
-        th { padding: 14px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-dim); border-bottom: 1px solid #1e293b; }
-        td { padding: 14px; font-size: 0.85rem; border-bottom: 1px solid #0f172a; white-space: nowrap; }
-        tr:hover td { background: rgba(0, 240, 255, 0.01); }
-
-        .pill { padding: 3px 8px; font-size: 0.7rem; font-weight: 700; border-radius: 4px; text-transform: uppercase; }
-        .pill-active { background: rgba(0, 255, 102, 0.1); color: var(--status-green); }
-        .pill-suspended { background: rgba(255, 42, 75, 0.1); color: var(--status-red); }
-        .pill-expired { background: rgba(255, 159, 0, 0.1); color: var(--status-orange); }
-
-        ::-webkit-scrollbar { width: 4px; height: 4px; }
-        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--cyan-neon); }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, sans-serif; }
+        body { background: radial-gradient(circle at center, #0f0c1b 0%, #05020a 100%); color: #fff; min-height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 20px; }
+        .login-card { background: rgba(15, 10, 30, 0.65); border: 1px solid rgba(255, 0, 128, 0.3); border-radius: 16px; width: 100%; max-width: 420px; padding: 40px 30px; backdrop-filter: blur(20px); box-shadow: 0 0 40px rgba(255, 0, 128, 0.15), inset 0 0 20px rgba(0, 242, 254, 0.05); text-align: center; }
+        h1 { font-size: 1.8rem; letter-spacing: 2px; margin-bottom: 10px; background: linear-gradient(45deg, #ff007f, #00f2fe); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800; }
+        p { color: #8a829e; font-size: 0.9rem; margin-bottom: 30px; }
+        .form-group { text-align: left; margin-bottom: 20px; }
+        label { display: block; color: #00f2fe; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; font-weight: 600; }
+        input { width: 100%; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); padding: 12px 16px; border-radius: 8px; color: #fff; font-size: 1rem; transition: all 0.3s ease; }
+        input:focus { border-color: #ff007f; box-shadow: 0 0 15px rgba(255,0,128,0.4); outline: none; }
+        .btn { width: 100%; background: linear-gradient(45deg, #ff007f, #7928ca); border: none; color: white; padding: 14px; font-size: 1rem; font-weight: bold; border-radius: 8px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; box-shadow: 0 4px 15px rgba(255, 0, 128, 0.4); transition: all 0.3s; }
+        .btn:hover { filter: brightness(1.2); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(255, 0, 128, 0.6); }
+        .err { background: rgba(255,0,0,0.15); border: 1px solid #ff0033; color: #ff3366; padding: 12px; border-radius: 8px; font-size: 0.85rem; margin-bottom: 20px; text-align: left; }
     </style>
 </head>
 <body>
-<div class="container">
-
-    {% if view == 'login' %}
-    <div class="login-frame">
-        <div class="login-header">
-            <h2>SYSTEM REGISTRY</h2>
-            <p style="color: var(--text-dim); font-size: 0.75rem; margin-top: 4px;">VERIFY OPERATOR IDENTIFICATION</p>
-        </div>
-        {% if error %}<p style="color: var(--status-red); text-align: center; font-size: 0.8rem; margin-bottom: 12px; font-weight: 600;">{{ error }}</p>{% endif %}
-        <form action="/login" method="POST">
-            <div class="input-group">
-                <label>Operator ID</label>
-                <input type="text" name="username" required autocomplete="off">
-            </div>
-            <div class="input-group">
-                <label>Security Keyphrase</label>
-                <input type="password" name="password" required>
-            </div>
-            <button type="submit" class="btn" style="width: 100%; margin-top: 4px;">INITIALIZE CORE</button>
+    <div class="login-card">
+        <h1>SHAYAN_EXPLORER</h1>
+        <p>COSMIC CORE OSINT MANAGEMENT ENGINE</p>
+        {% if error %}<div class="err">{{ error }}</div>{% endif %}
+        <form method="POST">
+            <div class="form-group"><label>Terminal User</label><input type="text" name="username" required autocomplete="off"></div>
+            <div class="form-group"><label>Access Token Secret</label><input type="password" name="password" required></div>
+            <button type="submit" class="btn">Authenticate Engine</button>
         </form>
     </div>
-
-    {% elif view == 'main' %}
-    <header>
-        <div class="header-main">
-            <h1>CENTRAL SECURITY RUNTIME</h1>
-            <p>GATEWAY STATUS: ONLINE // DEVELOPER: <span class="dev-tag">SHAYAN_EXPLORER</span></p>
-        </div>
-        <a href="/logout" class="btn btn-danger">TERMINATE INSTANCE</a>
-    </header>
-
-    <div class="layout-grid">
-        <div class="card">
-            <div class="card-title">MINT GATEWAY ACCESS CREDENTIAL</div>
-            <form action="/admin/key/generate" method="POST">
-                <div class="input-group">
-                    <label>Client Reference Description</label>
-                    <input type="text" name="name" placeholder="Subscriber Token Identity" required autocomplete="off">
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                    <div class="input-group">
-                        <label>Request Volume Limit</label>
-                        <input type="number" name="limit" value="1000" required min="1">
-                    </div>
-                    <div class="input-group" id="expiry_date_block">
-                        <label>Timeline Expiration Date</label>
-                        <input type="datetime-local" name="expiry" id="expiry_field">
-                    </div>
-                </div>
-                <div class="input-group">
-                    <div class="toggle-row">
-                        <input type="checkbox" name="is_lifetime" id="is_lifetime" onchange="toggleLifetimeContext(this)">
-                        <label style="margin-bottom:0; cursor:pointer;" for="is_lifetime">Grant Lifetime Validity Matrix (No Expiration)</label>
-                    </div>
-                </div>
-                <div class="input-group">
-                    <label>Restrict Scopes (Leave unchecked for All Module Privileges)</label>
-                    <div class="selector-box">
-                        {% for tool in tools %}
-                        <label class="selector-item" for="t-{{ tool }}">
-                            <input type="checkbox" name="tools" value="{{ tool }}" id="t-{{ tool }}">
-                            <span>{{ tool | upper }} Verification Path</span>
-                        </label>
-                        {% endfor %}
-                    </div>
-                </div>
-                <button type="submit" class="btn" style="width: 100%;">DEPLOY KEY ROUTE ACCESS</button>
-            </form>
-        </div>
-
-        <div class="card">
-            <div class="card-title">ROUTING GRAPH MODULES</div>
-            <div class="viewport-scroll">
-                {% for tool, fallback_param in tools.items() %}
-                <div class="route-strip">
-                    <div class="route-details">
-                        <div class="route-header">{{ tool }}</div>
-                        <div class="route-link" id="url-{{ tool }}">/api/{{ tool }}?key={KEY_STRING}&{{ fallback_param }}={VALUE}</div>
-                    </div>
-                    <button class="btn" style="padding: 6px 10px; font-size: 0.7rem;" onclick="copySystemRoute('url-{{ tool }}')">COPY</button>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-    </div>
-
-    <div class="card" style="margin-bottom: 20px;">
-        <div class="card-title">CREDENTIAL SYSTEM LEDGER</div>
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Access Token Key</th>
-                        <th>Client Tag</th>
-                        <th>Usage Vol</th>
-                        <th>Target Expiration Timeline</th>
-                        <th>Allowed Scope Access</th>
-                        <th>State</th>
-                        <th>Operations</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for key, info in keys.items() %}
-                    <tr>
-                        <td style="color: var(--cyan-neon); font-weight: 700;"><code>{{ key }}</code></td>
-                        <td>{{ info.name }}</td>
-                        <td>{{ info.usages }} / {{ info.limit }}</td>
-                        <td style="font-size: 0.8rem; color: var(--text-dim);">
-                            {% if info.is_lifetime %}LIFETIME VALIDITY{% else %}{{ info.expiry.replace('T', ' ') }}{% endif %}
-                        </td>
-                        <td style="max-width: 140px; overflow: hidden; text-overflow: ellipsis;">{{ info.allowed_tools | join(', ') }}</td>
-                        <td><span class="pill pill-{{ info.status }}">{{ info.status }}</span></td>
-                        <td>
-                            {% if info.status == 'active' %}
-                            <a href="/admin/key/action/{{ key }}/suspend" class="btn" style="padding: 4px 8px; font-size: 0.7rem; border-color: var(--status-orange); color: var(--status-orange);">SUSPEND</a>
-                            {% else %}
-                            <a href="/admin/key/action/{{ key }}/unsuspend" class="btn" style="padding: 4px 8px; font-size: 0.7rem;">REVIVE</a>
-                            {% endif %}
-                            <a href="/admin/key/action/{{ key }}/delete" class="btn btn-danger" style="padding: 4px 8px; font-size: 0.7rem;" onclick="return confirm('Purge access profile metadata?')">PURGE</a>
-                        </td>
-                    </tr>
-                    {% else %}
-                    <tr><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 25px;">No active access tokens configured inside operational persistence layer memory blocks.</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-title">REALTIME ACCESS TRAFFIC LOGS</div>
-        <div class="table-wrap" style="max-height: 240px;">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Timestamp Frame</th>
-                        <th>Execution Key String</th>
-                        <th>Client Tag</th>
-                        <th>Module Path</th>
-                        <th>Query Metadata String</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for log in logs | reverse %}
-                    <tr>
-                        <td style="color: var(--text-dim); font-size: 0.8rem;">{{ log.timestamp }}</td>
-                        <td><code>{{ log.key }}</code></td>
-                        <td>{{ log.name }}</td>
-                        <td style="color: var(--cyan-neon); font-weight: 600;">{{ log.tool | upper }}</td>
-                        <td><span style="color: #fff; background: rgba(0, 240, 255, 0.03); padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; border: 1px solid rgba(0,240,255,0.05);">{{ log.query }}</span></td>
-                    </tr>
-                    {% else %}
-                    <tr><td colspan="5" style="text-align: center; color: var(--text-dim); padding: 25px;">Awaiting operational gateway traffic request logs...</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    {% endif %}
-
-</div>
-
-<script>
-if(document.getElementById('expiry_field')) {
-    var futureTarget = new Date();
-    futureTarget.setHours(futureTarget.getHours() + 48);
-    document.getElementById('expiry_field').value = futureTarget.toISOString().slice(0, 16);
-}
-
-function toggleLifetimeContext(checkboxElement) {
-    var inputBlock = document.getElementById('expiry_date_block');
-    var targetField = document.getElementById('expiry_field');
-    if(checkboxElement.checked) {
-        inputBlock.style.opacity = '0.3';
-        targetField.required = false;
-        targetField.disabled = true;
-    } else {
-        inputBlock.style.opacity = '1';
-        targetField.required = true;
-        targetField.disabled = false;
-    }
-}
-
-function copySystemRoute(targetRef) {
-    var pathStr = document.getElementById(targetRef).innerText;
-    var remoteDomain = window.location.origin;
-    var completeBuffer = remoteDomain + pathStr;
-    
-    navigator.clipboard.writeText(completeBuffer).then(function() {
-        alert("Gateway Route URL Map Buffer Successfully Copied to Device Clipboard.");
-    }).catch(function(err) {
-        console.error('Incompatible runtime environment permissions architecture: ', err);
-    });
-}
-</script>
 </body>
 </html>
 """
 
-@app.route('/')
-def home():
-    evaluate_key_expiration()
-    if not session.get('logged_in'):
-        return render_template_string(UI_TEMPLATE, view='login')
-    return redirect(url_for('admin_dashboard'))
-
-@app.route('/login', methods=['POST'])
-def login():
-    username = request.form.get('username')
-    password = request.form.get('password')
-    if username == ADMIN_USER and password == ADMIN_PASS:
-        session['logged_in'] = True
-        return redirect(url_for('admin_dashboard'))
-    return render_template_string(UI_TEMPLATE, view='login', error="Authorization Mismatch: Invalid Control Credentials.")
-
-@app.route('/logout')
-def logout():
-    session.pop('logged_in', None)
-    return redirect(url_for('home'))
-
-@app.route('/admin/dashboard')
-def admin_dashboard():
-    if not session.get('logged_in'):
-        return redirect(url_for('home'))
-    evaluate_key_expiration()
-    state_matrix = fetch_active_state()
-    return render_template_string(
-        UI_TEMPLATE, 
-        view='main', 
-        keys=state_matrix["keys"], 
-        logs=state_matrix["logs"], 
-        tools=SUPPORTED_TOOLS
-    )
-
-@app.route('/admin/key/generate', methods=['POST'])
-def generate_key():
-    if not session.get('logged_in'):
-        return jsonify({"error": "Unauthorized Node Access"}), 403
+DASHBOARD_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SHAYAN_EXPLORER | Command Center</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+        body { background: #07040f; color: #e2dbf0; min-height: 100vh; padding: 20px; }
+        header { max-width: 1200px; margin: 0 auto 30px auto; display: flex; justify-content: space-between; align-items: center; background: rgba(20,15,35,0.7); padding: 20px 30px; border-radius: 12px; border: 1px solid rgba(0, 242, 254, 0.2); backdrop-filter: blur(10px); }
+        header h1 { font-size: 1.6rem; font-weight: 800; background: linear-gradient(45deg, #ff007f, #00f2fe); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .logout-lnk { color: #ff007f; text-decoration: none; font-weight: bold; border: 1px solid #ff007f; padding: 6px 14px; border-radius: 6px; font-size: 0.85rem; transition: 0.3s; }
+        .logout-lnk:hover { background: #ff007f; color: #fff; box-shadow: 0 0 15px rgba(255,0,128,0.5); }
+        .wrapper { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 1fr; gap: 30px; }
+        @media(min-width: 900px) { .wrapper { grid-template-columns: 380px 1fr; } }
+        .card { background: rgba(18, 12, 32, 0.8); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); position: relative; }
+        .card::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 3px; background: linear-gradient(90deg, #ff007f, #00f2fe); border-radius: 12px 12px 0 0; }
+        h2 { font-size: 1.2rem; color: #00f2fe; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 1px; display: flex; justify-content: space-between; align-items: center; }
+        .form-control { margin-bottom: 16px; }
+        label { display: block; font-size: 0.8rem; color: #aaa5b9; margin-bottom: 6px; text-transform: uppercase; font-weight: 600; }
+        input[type="text"], input[type="number"], select { width: 100%; background: #0c0817; border: 1px solid rgba(255,255,255,0.1); padding: 10px 14px; border-radius: 6px; color: #fff; }
+        input:focus, select:focus { border-color: #00f2fe; outline: none; }
+        .tools-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 150px; overflow-y: auto; background: #080510; padding: 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05); }
+        .tools-grid label { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: #eee; cursor: pointer; text-transform: none; margin: 0; }
+        .btn-action { width: 100%; background: linear-gradient(45deg, #00f2fe, #7928ca); border: none; color: #fff; padding: 12px; font-weight: bold; border-radius: 6px; cursor: pointer; text-transform: uppercase; transition: 0.3s; margin-top: 10px; }
+        .btn-action:hover { filter: brightness(1.2); box-shadow: 0 0 15px rgba(0,242,254,0.4); }
         
-    name = request.form.get('name', 'External Core Node')
-    limit = int(request.form.get('limit', 1000))
-    expiry = request.form.get('expiry')
-    is_lifetime = request.form.get('is_lifetime') is not None
-    selected_tools = request.form.getlist('tools')
-    
-    if not expiry and not is_lifetime:
-        return redirect(url_for('admin_dashboard'))
+        /* Key Rows Card layout */
+        .key-box { background: #0d091a; border: 1px solid rgba(255,255,255,0.04); border-radius: 8px; padding: 16px; margin-bottom: 15px; border-left: 4px solid #00f2fe; transition: 0.2s; }
+        .key-box.suspended { border-left-color: #ff0055; opacity: 0.6; }
+        .key-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .key-title { font-weight: bold; font-size: 1.05rem; color: #fff; }
+        .key-string { font-family: monospace; background: #18122b; padding: 4px 8px; border-radius: 4px; color: #ff007f; font-size: 0.9rem; word-break: break-all; display: inline-block; margin: 5px 0; }
+        .badge { font-size: 0.7rem; padding: 3px 8px; border-radius: 20px; font-weight: bold; text-transform: uppercase; }
+        .badge-active { background: rgba(0,242,254,0.15); color: #00f2fe; }
+        .badge-suspended { background: rgba(255,0,127,0.15); color: #ff007f; }
+        .meta-line { font-size: 0.8rem; color: #a19bb0; margin-bottom: 4px; }
+        .ops-panel { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+        .btn-op { padding: 5px 12px; font-size: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: bold; border: none; color: #fff; }
+        .btn-suspend { background: #d48208; }
+        .btn-unsuspend { background: #00a896; }
+        .btn-delete { background: #b30000; }
+        .btn-edit { background: #3b2073; }
         
-    generated_token = f"SHAYAN_{uuid.uuid4().hex[:10].upper()}"
-    state_matrix = fetch_active_state()
-    
-    state_matrix["keys"][generated_token] = {
-        "name": name,
-        "limit": limit,
-        "usages": 0,
-        "expiry": expiry if not is_lifetime else "9999-12-31T23:59",
-        "is_lifetime": is_lifetime,
-        "allowed_tools": selected_tools if selected_tools else ["all"],
-        "status": "active"
-    }
-    commit_state_changes(state_matrix)
-    return redirect(url_for('admin_dashboard'))
+        /* Endpoints section button copy elements */
+        .endpoints-showcase { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 25px; background: #110b22; padding: 15px; border-radius: 8px; border: 1px dashed rgba(255,0,128,0.3); }
+        .endpoint-btn { background: #1b1333; border: 1px solid rgba(255,255,255,0.1); color: #00f2fe; padding: 8px 12px; border-radius: 6px; font-size: 0.8rem; cursor: pointer; font-family: monospace; transition: 0.2s; }
+        .endpoint-btn:hover { background: #ff007f; color: #fff; box-shadow: 0 0 10px rgba(255,0,128,0.4); border-color: transparent; }
+        
+        /* Logs display matrix */
+        .log-table-wrapper { overflow-x: auto; max-height: 300px; background: #090514; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05); }
+        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; text-align: left; }
+        th, td { padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        th { background: #130d26; color: #00f2fe; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; }
+        tr:hover { background: rgba(255,255,255,0.02); }
+        
+        /* Modal Config */
+        .modal { display:none; position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); backdrop-filter:blur(5px); justify-content:center; align-items:center; z-index:999; padding: 20px; }
+        .modal-content { background:#16102b; border: 1px solid #ff007f; width:100%; max-width:450px; padding:25px; border-radius:12px; position:relative; }
+        .close-modal { position:absolute; top:12px; right:16px; color:#fff; font-size:1.4rem; cursor:pointer; }
+    </style>
+</head>
+<body>
 
-@app.route('/admin/key/action/<key_id>/<action>')
-def key_action(key_id, action):
-    if not session.get('logged_in'):
-        return redirect(url_for('home'))
-        
-    state_matrix = fetch_active_state()
-    if key_id in state_matrix["keys"]:
-        if action == "suspend":
-            state_matrix["keys"][key_id]["status"] = "suspended"
-        elif action == "unsuspend":
-            state_matrix["keys"][key_id]["status"] = "active"
-        elif action == "delete":
-            del state_matrix["keys"][key_id]
+    <header>
+        <div>
+            <h1>SHAYAN_EXPLORER COMMAND INTERFACE</h1>
+            <div style="font-size:0.75rem; color:#888; margin-top:2px;">Engine Developer: SHAYAN_EXPLORER | Version 2026 Production Standard</div>
+        </div>
+        <a href="/logout" class="logout-lnk">Disconnect Session</a>
+    </header>
+
+    <div class="wrapper">
+        <div class="card">
+            <h2>Generate Secure Key</h2>
+            <form action="/action/generate" method="POST">
+                <div class="form-control">
+                    <label>Client Name / Label</label>
+                    <input type="text" name="name" placeholder="Example: VIP Premium Client" required>
+                </div>
+                <div class="form-control">
+                    <label>Total Request Allowance Limit (0 = Unlimited)</label>
+                    <input type="number" name="limit" value="0" min="0" required>
+                </div>
+                <div class="form-control">
+                    <label>Validation Model</label>
+                    <select name="expiry_type" id="gen_exp_type" onchange="toggleDays('gen')">
+                        <option value="lifetime">Lifetime Allocation</option>
+                        <option value="date">Relative Time Expire Horizon</option>
+                    </select>
+                </div>
+                <div class="form-control" id="gen_days_wrapper" style="display:none;">
+                    <label>Valid Time Windows (In Days, e.g. 2 or 0.5)</label>
+                    <input type="number" name="expiry_days" value="2" step="0.01" min="0">
+                </div>
+                <div class="form-control">
+                    <label>Allowed Microservices Sandbox Scope</label>
+                    <div class="tools-grid">
+                        <label><input type="checkbox" name="tools" value="all" checked> [ALL CAPABILITIES]</label>
+                        {% for endpoint in endpoints %}
+                        <label><input type="checkbox" name="tools" value="{{ endpoint }}"> {{ endpoint }}</label>
+                        {% endfor %}
+                    </div>
+                </div>
+                <button type="submit" class="btn-action">Deploy New Key</button>
+            </form>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 30px;">
             
-    commit_state_changes(state_matrix)
-    return redirect(url_for('admin_dashboard'))
+            <div class="card">
+                <h2>Fast Core Endpoints Registry (One-Click Snippet Copy)</h2>
+                <div class="endpoints-showcase">
+                    {% for endpoint in endpoints %}
+                    <button class="endpoint-btn" onclick="copyApiUrl('{{ endpoint }}')">/api/{{ endpoint }}</button>
+                    {% endfor %}
+                </div>
+                <p style="font-size: 0.75rem; color: #8a829e;">* Clicking on any service pill automatically extracts your dynamic endpoint path directly onto your clipboard structure.</p>
+            </div>
 
-# Dynamic Proxy Engine Gateway Route
-@app.route('/api/<tool_name>', methods=['GET'])
-def endpoint_proxy_link(tool_name):
-    if tool_name not in SUPPORTED_TOOLS:
-        return jsonify({"error": f"Endpoint signature mapping target '{tool_name}' unknown."}), 404
-        
-    client_key = request.args.get('key')
-    state_matrix = fetch_active_state()
-    
-    if not client_key or client_key not in state_matrix["keys"]:
-        return jsonify({"error": "The key is invalid. Please buy a new key.", "status": "invalid"}), 401
-        
-    key_info = state_matrix["keys"][client_key]
-    
-    if key_info["status"] == "suspended":
-        return jsonify({"error": "The key is suspended by admin.", "status": "suspended"}), 403
-        
-    if not key_info.get("is_lifetime", False):
-        expiry_deadline = datetime.strptime(key_info["expiry"], "%Y-%m-%dT%H:%M")
-        if datetime.now() > expiry_deadline:
-            state_matrix["keys"][client_key]["status"] = "expired"
-            commit_state_changes(state_matrix)
-            return jsonify({"error": "The key is expired. Please buy a new key.", "status": "expired"}), 401
-        
-    if key_info["usages"] >= key_info["limit"]:
-        return jsonify({"error": "Allocated volumetric data limits reached for key context.", "status": "limited"}), 429
-        
-    if "all" not in key_info["allowed_tools"] and tool_name not in key_info["allowed_tools"]:
-        return jsonify({"error": f"This key does not have access to the '{tool_name}' endpoint.", "status": "unauthorized"}), 403
-        
-    # Query Analysis Auditing System
-    raw_query_params = request.args.to_dict()
-    mapped_query_key = SUPPORTED_TOOLS[tool_name]
-    extracted_query_value = raw_query_params.get(mapped_query_key, "N/A")
-    
-    state_matrix["logs"].append({
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "key": client_key,
-        "name": key_info["name"],
-        "tool": tool_name,
-        "query": f"{mapped_query_key}={extracted_query_value}"
-    })
-    
-    state_matrix["keys"][client_key]["usages"] += 1
-    commit_state_changes(state_matrix)
-    
-    # Restructure outgoing parameters for downstream authentication translation
-    forwarded_params = raw_query_params.copy()
-    forwarded_params['key'] = MASTER_VENDOR_KEY
-    
-    try:
-        upstream_response = requests.get(f"{TARGET_BASE_API}/{tool_name}", params=forwarded_params, timeout=12)
-        return (upstream_response.content, upstream_response.status_code, upstream_response.headers.items())
-    except requests.exceptions.RequestException:
-        return jsonify({"error": "Data stream connectivity error from base network layer."}), 502
+            <div class="card">
+                <h2>Active Subscribed Key Ecosystem Matrix ({{ db.keys|length }})</h2>
+                <div style="max-height: 600px; overflow-y: auto; padding-right:5px;">
+                    {% if not db.keys %}
+                    <p style="color:#666; font-style:italic;">No cryptographic keys currently active inside database.</p>
+                    {% endif %}
+                    {% for key, info in db.keys.items() %}
+                    <div class="key-box {% if info.suspended %}suspended{% endif %}">
+                        <div class="key-header">
+                            <span class="key-title">{{ info.name }}</span>
+                            {% if info.suspended %}
+                            <span class="badge badge-suspended">Suspended</span>
+                            {% else %}
+                            <span class="badge badge-active">Online</span>
+                            {% endif %}
+                        </div>
+                        <div><span class="key-string" id="str-{{key}}">{{ key }}</span></div>
+                        <div class="meta-line"><strong>Quota Request Met:</strong> {{ info.usage }} / {% if info.limit == 0 %}∞{% else %}{{ info.limit }}{% endif %} requests</div>
+                        <div class="meta-line"><strong>Scope Permissions:</strong> {{ info.allowed_tools }}</div>
+                        <div class="meta-line">
+                            <strong>Validation Model Window:</strong> 
+                            {% if info.expiry_type == 'lifetime' %}
+                            <span style="color:#00f2fe;">Lifetime</span>
+                            {% else %}
+                            <span class="expiry-timer" data-time="{{ info.expiry_timestamp }}">Calculating remaining horizon...</span>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="ops-panel">
+                            <form action="/action/modify//{{key}}" method="POST" style="display:inline;">
+                                {% if info.suspended %}
+                                <input type="hidden" name="op" value="unsuspend">
+                                <button type="submit" class="btn-op btn-unsuspend">Unsuspend</button>
+                                {% else %}
+                                <input type="hidden" name="op" value="suspend">
+                                <button type="submit" class="btn-op btn-suspend">Suspend</button>
+                                {% endif %}
+                            </form>
+                            <form action="/action/modify/{{key}}" method="POST" style="display:inline;">
+                                <input type="hidden" name="op" value="delete">
+                                <button type="submit" class="btn-op btn-delete" onclick="return confirm('Confirm complete immediate key drop configuration?')">Remove</button>
+                            </form>
+                            <button class="btn-op btn-edit" onclick="openEditModal('{{key}}', '{{info.name}}', '{{info.limit}}', '{{info.expiry_type}}')">Edit Configuration</button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
 
-if __name__ == '__main__':
-    app.run(debug=True)
+            <div class="card">
+                <h2>Realtime Core Infrastructure Audit Logs (Last 50 Records)</h2>
+                <div class="log-table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Client Target</th>
+                                <th>Route</th>
+                                <th>Query Inspected</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for log in db.logs[-50:]|reverse %}
+                            <tr>
+                                <td style="white-space:nowrap; color:#00f2fe;">{{ log.timestamp }}</td>
+                                <td><span style="font-family:monospace; color:#ff007f;">{{ log.key_name }}</span></td>
+                                <td><span class="badge badge-active">/{{ log.endpoint }}</span></td>
+                                <td style="font-family:monospace; color:#ccc; max-width:300px; overflow:hidden; text-overflow:ellipsis;">{{ log.query }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="editModal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeEditModal()">&times;</span>
+            <h2 style="margin-bottom:15px; font-size:1.1rem;">Modify Active Runtime Parameters</h2>
+            <form id="editForm" method="POST" action="">
+                <input type="hidden" name="op" value="update">
+                <div class="form-control">
+                    <label>Client Name / Label</label>
+                    <input type="text" name="name" id="edit_name" required>
+                </div>
+                <div class="form-control">
+                    <label>Total Limit (0 = Unlimited)</label>
+                    <input type="number" name="limit" id="edit_limit" required>
+                </div>
+                <div class="form-control">
+                    <label>Validation Model</label>
+                    <select name="expiry_type" id="edit_exp_type" onchange="toggleDays('edit')">
+                        <option value="lifetime">Lifetime Allocation</option>
+                        <option value="date">Relative Time Expire Horizon</option>
+                    </select>
+                </div>
+                <div class="form-control" id="edit_days_wrapper" style="display:none;">
+                    <label>Reset Additional Lifespan (In Days, e.g. 2)</label>
+                    <input type="number" name="expiry_days" id="edit_days" value="2" step="0.01">
+                </div>
+                <div class="form-control">
+                    <label>Allowed Sandbox Scope</label>
+                    <div class="tools-grid">
+                        <label><input type="checkbox" name="tools" value="all" checked> [ALL CAPABILITIES]</label>
+                        {% for endpoint in endpoints %}
+                        <label><input type="checkbox" name="tools" value="{{ endpoint }}"> {{ endpoint }}</label>
+                        {% endfor %}
+                    </div>
+                </div>
+                <button type="submit" class="btn-action">Commit Structural Mod Changes</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function toggleDays(prefix) {
+            var type = document.getElementById(prefix + '_exp_type').value;
+            document.getElementById(prefix + '_days_wrapper').style.display = (type === 'date') ? 'block' : 'none';
+        }
+        function openEditModal(key, name, limit, expType) {
+            var form = document.getElementById('editForm');
+            form.action = '/action/modify/' + key;
+            document.getElementById('edit_name').value = name;
+            document.getElementById('edit_limit').value = limit;
+            document.getElementById('edit_exp_type').value = expType;
+            toggleDays('edit');
+            document.getElementById('editModal').style.display = 'flex';
+        }
+        function closeEditModal() {
+            document.getElementById('editModal').style.display = 'none';
+        }
+        function copyApiUrl(endpoint) {
+            var host = window.location.origin;
+            var fullUrl = host + "/api/" + endpoint + "?key={YOUR_GENERATED_KEY}&num=9876543210";
+            navigator.clipboard.writeText(fullUrl).then(function() {
+                alert("Copied Endpoint Architecture Template:\\n" + fullUrl);
+            });
+        }
+        function updateTimers() {
+            var now = Math.floor(Date.now() / 1000);
+            var elements = document.getElementsByClassName('expiry-timer');
+            for(var i=0; i<elements.length; i++) {
+                var ts = parseFloat(elements[i].getAttribute('data-time'));
+                var diff = ts - now;
+                if (diff <= 0) {
+                    elements[i].innerHTML = "<span style='color:#ff0055; font-weight:bold;'>EXPIRED (Buy new key)</span>";
+                } else {
+                    var days = Math.floor(diff / 86400);
+                    var hours = Math.floor((diff % 86400) / 3600);
+                    var mins = Math.floor((diff % 3600) / 60);
+                    var secs = Math.floor(diff % 60);
+                    elements[i].innerHTML = days + "d " + hours + "h " + mins + "m " + secs + "s remaining";
+                }
+            }
+        }
+        setInterval(updateTimers, 1000);
+        updateTimers();
+    </script>
+</body>
+</html>
+"""
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
+
 
 
 
