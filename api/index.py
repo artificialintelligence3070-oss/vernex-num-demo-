@@ -11,7 +11,7 @@ app = FastAPI(title="SHAYAN_EXPLORER Gateway Platform")
 # --- CORE ARCHITECTURE GLOBAL INITIALIZATION ---
 DEVELOPER_NAME = "SHAYAN_EXPLORER"
 UPSTREAM_API_BASE = "https://ft-osint-api.duckdns.org/api"
-UPSTREAM_MASTER_KEY = "vernex-6a9dc4fdd5923c40b0aba27bf1e39e3f"
+UPSTREAM_MASTER_KEY = "vx-osint"
 
 ADMIN_USER = "vernex"
 ADMIN_PASS = "vernex@16vx"
