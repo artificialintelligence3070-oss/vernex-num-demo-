@@ -315,7 +315,6 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
             </section>
         </div>
 
-        <!-- ENDPOINTS MODAL WITH SECURE BASE PLACEHOLDERS -->
         <div id="endpoints_modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div class="bg-[#060608] border border-zinc-800 w-full max-w-3xl rounded-3xl p-6 relative max-h-[85vh] flex flex-col">
                 <div class="flex justify-between items-center mb-6">
@@ -326,7 +325,6 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
             </div>
         </div>
 
-        <!-- EDIT MODULE FORM MODAL -->
         <div id="edit_modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div class="bg-[#060608] border border-zinc-800 w-full max-w-xl rounded-3xl p-6 relative">
                 <h3 class="text-sm font-mono uppercase tracking-widest text-purple-400 mb-6">Modify Gateway Authorization Profiles</h3>
@@ -402,17 +400,16 @@ async def administration_dashboard(session: Optional[str] = Cookie(None)):
                 
                 const toolsListArray = {AVAILABLE_TOOLS};
                 
-                // Meticulous mapping profiles to safeguard identifiers via strict Redaction policy
                 const routeBlueprints = {{
                     "pk": "num=0000000000",
                     "name": "name=abhiraaj",
-                    "aadhar": "num=[Aadhaar Redacted]",
+                    "aadhar": "num=000000000000",
                     "upi": "upi=example@ybl",
                     "numtoupi": "num=8945996482",
                     "pan": "pan=AXDPR2606K",
                     "vehicle": "vehicle=KA01AB1234",
                     "veh2num": "vehicle=KL41V3504",
-                    "adharfamily": "num=[Aadhaar Redacted]",
+                    "adharfamily": "num=000000000000",
                     "bomber": "number=9876543210&counter=100"
                 }};
 
@@ -548,8 +545,3 @@ async def execute_key_destruction(key: str, session: Optional[str] = Cookie(None
     if key in API_KEYS_DB:
         del API_KEYS_DB[key]
     return RedirectResponse(url="/admin", status_code=303)
-
-
-
-
-
