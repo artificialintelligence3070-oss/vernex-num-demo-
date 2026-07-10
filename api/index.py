@@ -11,7 +11,7 @@ app = FastAPI(title="SHAYAN_EXPLORER HUB API")
 
 # --- CONFIGURATION & SECURITY ---
 TARGET_BASE_API = "https://ft-osint-api.duckdns.org/api"
-MASTER_KEY = "shayan-exploindia"
+MASTER_KEY = "explorer16"
 ADMIN_USER = "vernex"
 ADMIN_PASS = "vernex@16vx"
 
