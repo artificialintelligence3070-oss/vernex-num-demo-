@@ -8,35 +8,45 @@ from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.security import APIKeyCookie
 
-app = FastAPI(title="SHAYAN_EXPLORER HUB API")
+app = FastAPI(title="SHAYAN_EXPLORER LUXURY HUB")
 
 # --- CONFIGURATION & SECURITY ---
 TARGET_BASE_API = "https://ft-osint-api.duckdns.org/api"
-MASTER_KEY = "explorer16"
+MASTER_KEY = "shayan-exploindia"
 ADMIN_USER = "vernex"
 ADMIN_PASS = "vernex@16vx"
 
 cookie_sec = APIKeyCookie(name="session_token", auto_error=False)
 
-# ─── 🔒 PERMANENT HARDCODED KEYS MATRIX ────────────────────────────────────────
+# ─── 🔒 PERMANENT HARDCODED KEYS MATRIX (NEVER DELETED BY VERCEL) ─────────────
+# 💡 Put your keys here! Because they are hardcoded in the file, they will 
+# survive Vercel cold-starts and will NEVER be automatically deleted.
 PERMANENT_STATIC_KEYS = {
-    "vx-osint": {
-        "owner": "Master Deployment Default",
-        "token": "vx-osint",
+    "shayan-vip": {
+        "owner": "Shayan Owner Account",
+        "token": "shayan-vip",
         "expiry": "LIFETIME ACCESS",
         "limit": 999999,
+        "used": 0,
+        "status": "Active",
+        "scopes": ["ALL"]
+    },
+    "vx-osint": {
+        "owner": "Master Default Access",
+        "token": "vx-osint",
+        "expiry": "2027-12-31 23:59:59",
+        "limit": 50000,
         "used": 0,
         "status": "Active",
         "scopes": ["ALL"]
     }
 }
 
-# --- APPS LIVE SYSTEM MEMORY MATRIX ---
+# --- APPLICATION LIVE MEMORY DATABASE ---
 API_KEYS_DB = {}
 API_KEYS_DB.update(PERMANENT_STATIC_KEYS)
 PIPELINE_LOGS = []
-SESSION_LOGS = []  # Tracks authentication timelines dynamically
-ROUTE_USAGE_COUNTER = {}  # Tracks metrics calculation engine for terminal bars
+ROUTE_USAGE_COUNTER = {}
 
 AVAILABLE_TOOLS = [
     "ADV", "PAYTM", "IMEI", "CALLTRACER", "UPI", "IFSC", "NUMBER", "PINCODE",
@@ -45,7 +55,6 @@ AVAILABLE_TOOLS = [
     "VEH2NUM", "ADHARFAMILY", "BOMBER"
 ]
 
-# Initialize metrics engine counters
 for tool in AVAILABLE_TOOLS:
     ROUTE_USAGE_COUNTER[tool] = 0
 
@@ -61,40 +70,39 @@ def white_label_filter(raw_content: str) -> str:
         sanitized = sanitized.replace(target, replacement)
     return sanitized
 
-# --- UI TEMPLATES ---
+# --- UI PREMIUM LUXURY TEMPLATES ---
 LOGIN_HTML = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>SHAYAN_EXPLORER HUB - Login</title>
+    <title>SHAYAN EXPLORER - ATELIER</title>
     <style>
-        body { background-color: #000000; color: #ff3333; font-family: 'Courier New', monospace; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; overflow: hidden; }
-        .login-card { background: #070101; border: 2px solid #ff0033; padding: 40px; border-radius: 4px; box-shadow: 0 0 20px #ff0033; width: 330px; animation: glowPulse 2.5s infinite alternate; }
-        h2 { color: #ff0033; text-align: center; font-size: 1.3rem; margin-bottom: 30px; letter-spacing: 3px; text-shadow: 0 0 10px #ff0033; }
-        .input-group { margin-bottom: 25px; }
-        label { display: block; font-size: 0.75rem; color: #aa2222; margin-bottom: 6px; letter-spacing: 1px; }
-        input { width: 100%; padding: 11px; background: #000000; border: 1px solid #550011; color: #ff6666; border-radius: 2px; box-sizing: border-box; font-family: monospace; }
-        input:focus { border-color: #ff0033; outline: none; box-shadow: 0 0 8px #ff0033; }
-        button { width: 100%; padding: 12px; background: #ff0033; border: none; color: black; font-weight: bold; cursor: pointer; border-radius: 2px; letter-spacing: 1px; transition: 0.3s; }
-        button:hover { background: #ff3366; box-shadow: 0 0 15px #ff3366; color: white; }
-        .error { color: #ff0000; font-size: 0.75rem; text-align: center; margin-bottom: 15px; text-shadow: 0 0 5px #ff0000; }
-        @keyframes glowPulse { 0% { box-shadow: 0 0 15px rgba(255,0,51,0.4); } 100% { box-shadow: 0 0 25px rgba(255,0,51,0.8); } }
+        body { background-color: #0b0b0b; color: #f5f5f7; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .login-card { background: #121212; border: 1px solid #2c2c2e; padding: 50px 40px; border-radius: 0px; box-shadow: 0 20px 40px rgba(0,0,0,0.5); width: 340px; text-align: center; transition: all 0.5s ease; }
+        h2 { color: #d4af37; font-weight: 300; font-size: 1.5rem; margin-bottom: 40px; letter-spacing: 4px; text-transform: uppercase; }
+        .input-group { margin-bottom: 25px; text-align: left; }
+        label { display: block; font-size: 0.7rem; color: #8e8e93; margin-bottom: 8px; letter-spacing: 2px; text-transform: uppercase; }
+        input { width: 100%; padding: 12px; background: #1c1c1e; border: 1px solid #2c2c2e; color: #fff; font-size: 0.9rem; box-sizing: border-box; transition: all 0.3s ease; font-family: inherit; }
+        input:focus { border-color: #d4af37; outline: none; background: #222; }
+        button { width: 100%; padding: 14px; background: #d4af37; border: none; color: #000; font-weight: 600; font-size: 0.8rem; letter-spacing: 2px; text-transform: uppercase; cursor: pointer; transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
+        button:hover { background: #fff; color: #000; box-shadow: 0 5px 15px rgba(255,255,255,0.1); }
+        .error { color: #ff3b30; font-size: 0.75rem; margin-bottom: 20px; letter-spacing: 1px; }
     </style>
 </head>
 <body>
     <div class="login-card">
-        <h2>MAIN_FRAMEWORK // LOG</h2>
+        <h2>SHAYAN EXPLORER</h2>
         {% if error %}<div class="error">{{ error }}</div>{% endif %}
         <form method="POST" action="/login">
             <div class="input-group">
-                <label>IDENTITY OPERATOR</label>
+                <label>OPERATOR IDENTIFIER</label>
                 <input type="text" name="username" required autocomplete="off">
             </div>
             <div class="input-group">
-                <label>ENCRYPTED ACCESS STRING</label>
+                <label>ACCESS SECURITY KEY</label>
                 <input type="password" name="password" required>
             </div>
-            <button type="submit">BOOT_UP SYSTEM</button>
+            <button type="submit">ENTER ATELIER</button>
         </form>
     </div>
 </body>
@@ -105,212 +113,241 @@ DASHBOARD_HTML = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>SHAYAN_EXPLORER HUB</title>
+    <title>SHAYAN EXPLORER CONSOLE</title>
     <style>
-        body { background-color: #020203; color: #ff4d4d; font-family: 'Courier New', monospace; margin: 0; padding: 20px; }
-        .navbar { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #ff0033; padding-bottom: 15px; margin-bottom: 30px; box-shadow: 0 4px 15px rgba(255,0,51,0.1); }
-        .brand { color: #ff0033; font-weight: bold; font-size: 1.3rem; letter-spacing: 2px; text-shadow: 0 0 10px #ff0033; animation: blinker 3s infinite; }
+        html { scroll-behavior: smooth; }
+        body { background-color: #070707; color: #e5e5e7; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; overflow-x: hidden; opacity: 0; animation: fadeInBody 0.8s cubic-bezier(0.25, 0.8, 0.25, 1) forwards; }
+        @keyframes fadeInBody { to { opacity: 1; } }
         
-        /* 3-Dots Dropdown Framework Matrix */
-        .dots-menu-container { position: relative; display: inline-block; }
-        .three-dots-btn { background: none; border: 1px solid #550011; color: #ff0033; font-size: 1.5rem; cursor: pointer; padding: 2px 14px; border-radius: 4px; transition: 0.3s; }
-        .three-dots-btn:hover { background: #ff0033; color: #000; box-shadow: 0 0 10px #ff0033; }
-        .dropdown-menu-content { display: none; position: absolute; right: 0; top: 35px; background: #070101; border: 2px solid #ff0033; min-width: 240px; box-shadow: 0 0 20px rgba(255,0,51,0.5); z-index: 500; border-radius: 4px; padding: 10px 0; }
-        .dropdown-menu-content a, .dropdown-menu-content button { display: block; width: 100%; text-align: left; background: none; border: none; padding: 12px 20px; color: #ff4d4d; font-family: monospace; font-size: 0.8rem; text-decoration: none; box-sizing: border-box; cursor: pointer; }
-        .dropdown-menu-content a:hover, .dropdown-menu-content button:hover { background: rgba(255,0,51,0.15); color: #fff; text-shadow: 0 0 5px #ff0033; }
-        .menu-user-tag { padding: 8px 20px; font-size: 0.7rem; color: #881111; border-bottom: 1px solid #33000a; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
+        .navbar { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1c1c1e; padding: 20px 40px; background: #0c0c0c; position: sticky; top: 0; z-index: 99; }
+        
+        /* Premium Left-Side Profile Logo Menu Framework */
+        .profile-container { display: flex; align-items: center; gap: 15px; cursor: pointer; padding: 5px; border-radius: 4px; transition: all 0.3s; }
+        .profile-container:hover { background: #121212; }
+        .avatar-frame { width: 42px; height: 42px; border-radius: 50%; border: 2px solid #d4af37; overflow: hidden; display: flex; justify-content: center; align-items: center; background: #1c1c1e; box-shadow: 0 0 10px rgba(212,175,55,0.2); }
+        .avatar-frame svg { width: 26px; height: 26px; fill: #d4af37; }
+        .brand-title { color: #fff; font-weight: 300; font-size: 1.1rem; letter-spacing: 3px; text-transform: uppercase; }
+        .brand-subtitle { font-size: 0.65rem; color: #8e8e93; letter-spacing: 1px; margin-top: 2px; }
 
-        .section-title { color: #ff0033; font-size: 0.95rem; margin-top: 40px; margin-bottom: 18px; letter-spacing: 1.5px; text-transform: uppercase; text-shadow: 0 0 8px rgba(255,0,51,0.4); }
-        .card { background: #060101; border: 1px solid #33000a; padding: 25px; border-radius: 4px; margin-bottom: 25px; box-shadow: inset 0 0 10px rgba(255,0,51,0.05); }
-        .grid-2 { display: grid; grid-template-columns: 1fr; gap: 20px; margin-bottom: 20px; }
+        /* Luxury Architectural Sliding Sidebar */
+        .sidebar-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 999; backdrop-filter: blur(4px); opacity: 0; transition: opacity 0.4s ease; }
+        .sidebar { position: fixed; top: 0; left: -320px; width: 320px; height: 100%; background: #0c0c0c; border-right: 1px solid #1c1c1e; z-index: 1000; box-shadow: 20px 0 4px rgba(0,0,0,0.3); transition: left 0.4s cubic-bezier(0.05, 0.74, 0.2, 0.99); padding: 40px 30px; box-sizing: border-box; display: flex; flex-direction: column; }
+        .sidebar.open { left: 0; }
+        .sidebar-overlay.open { display: block; opacity: 1; }
+        
+        .sidebar-header { margin-bottom: 50px; border-bottom: 1px solid #1c1c1e; padding-bottom: 20px; text-align: center; }
+        .sidebar-avatar-large { width: 80px; height: 80px; border-radius: 50%; border: 1px solid #d4af37; margin: 0 auto 15px; display: flex; justify-content: center; align-items: center; background: #121212; box-shadow: 0 0 15px rgba(212,175,55,0.15); }
+        .sidebar-user { font-size: 0.75rem; color: #8e8e93; letter-spacing: 2px; text-transform: uppercase; }
+        .sidebar-links { display: flex; flex-direction: column; gap: 10px; }
+        .sidebar-item { background: #121212; border: 1px solid #1c1c1e; color: #e5e5e7; padding: 15px 20px; font-size: 0.8rem; text-decoration: none; letter-spacing: 1px; text-transform: uppercase; transition: all 0.3s; cursor: pointer; text-align: left; }
+        .sidebar-item:hover { background: #d4af37; color: #000; border-color: #d4af37; font-weight: 600; box-shadow: 0 4px 12px rgba(212,175,55,0.2); }
+        
+        /* Structural Layout Grid Containers */
+        .main-container { padding: 40px; max-width: 1400px; margin: 0 auto; }
+        .section-title { color: #d4af37; font-weight: 300; font-size: 1rem; margin-top: 50px; margin-bottom: 25px; letter-spacing: 3px; text-transform: uppercase; border-left: 2px solid #d4af37; padding-left: 15px; }
+        .card { background: #0c0c0c; border: 1px solid #1c1c1e; padding: 35px; margin-bottom: 30px; transition: transform 0.3s ease, box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .card:hover { transform: translateY(-2px); border-color: #2c2c2e; }
+        
+        .grid-2 { display: grid; grid-template-columns: 1fr; gap: 25px; margin-bottom: 25px; }
         @media(min-width: 768px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
         .input-box { display: flex; flex-direction: column; }
-        .input-box label { font-size: 0.75rem; color: #aa2222; margin-bottom: 6px; letter-spacing: 1px; }
-        .input-box input, .input-box select { background: #000000; border: 1px solid #550011; padding: 11px; color: #ff6666; border-radius: 2px; font-family: monospace; }
-        .input-box input:focus { border-color: #ff0033; outline: none; box-shadow: 0 0 5px #ff0033; }
+        .input-box label { font-size: 0.65rem; color: #8e8e93; margin-bottom: 8px; letter-spacing: 2px; text-transform: uppercase; }
+        .input-box input, .input-box select { background: #121212; border: 1px solid #1c1c1e; padding: 14px; color: #fff; font-size: 0.85rem; font-family: inherit; transition: all 0.3s; }
+        .input-box input:focus { border-color: #d4af37; outline: none; background: #161618; }
         
-        .tools-header { display: flex; justify-content: space-between; font-size: 0.75rem; margin-top: 25px; margin-bottom: 12px; color: #aa2222; }
-        .tools-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
-        .tool-check { background: #000; border: 1px solid #220005; padding: 9px; border-radius: 2px; display: flex; align-items: center; font-size: 0.75rem; cursor: pointer; color: #cc3333; transition: 0.2s; }
-        .tool-check:hover { border-color: #ff0033; background: #0d0103; }
-        .tool-check input { margin-right: 10px; accent-color: #ff0033; }
+        /* Premium Analytical Charts Component */
+        .analytics-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; margin-bottom: 35px; }
+        .analyzer-card { background: #0c0c0c; border: 1px solid #1c1c1e; padding: 20px; position: relative; }
+        .analyzer-title { font-size: 0.65rem; color: #8e8e93; margin-bottom: 10px; letter-spacing: 2px; text-transform: uppercase; }
+        .analyzer-value { font-size: 1.6rem; color: #fff; font-weight: 300; }
+        .metric-bar-bg { width: 100%; height: 3px; background: #1c1c1e; margin-top: 15px; }
+        .metric-bar-fill { height: 100%; background: #d4af37; width: 0%; transition: width 1.2s cubic-bezier(0.1, 0.8, 0.25, 1); }
         
-        .btn-container { display: flex; justify-content: flex-end; margin-top: 25px; }
-        .submit-btn { background: #ff0033; border: none; color: #000; padding: 12px 28px; font-weight: bold; border-radius: 2px; cursor: pointer; font-size: 0.8rem; font-family: monospace; transition: 0.3s; }
-        .submit-btn:hover { background: #ff3366; box-shadow: 0 0 15px #ff0033; color: #fff; }
+        /* Elegant Form Sub-Selection Scopes List Grid */
+        .tools-header { display: flex; justify-content: space-between; font-size: 0.65rem; margin-top: 30px; margin-bottom: 15px; color: #8e8e93; letter-spacing: 2px; text-transform: uppercase; }
+        .tools-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+        .tool-check { background: #121212; border: 1px solid #1c1c1e; padding: 12px; display: flex; align-items: center; font-size: 0.75rem; cursor: pointer; color: #a1a1a6; transition: all 0.2s; letter-spacing: 1px; }
+        .tool-check:hover { border-color: #d4af37; color: #fff; background: #161618; }
+        .tool-check input { margin-right: 12px; accent-color: #d4af37; }
         
-        /* Fixed Unified Row Styling Matrix */
-        table { width: 100%; border-collapse: collapse; font-size: 0.75rem; text-align: left; }
-        th { color: #aa2222; font-weight: normal; padding-bottom: 12px; border-bottom: 1px solid #33000a; letter-spacing: 1px; }
-        td { padding: 14px 8px; border-bottom: 1px solid #140204; vertical-align: middle; }
-        .badge-active { color: #00ff66; font-weight: bold; text-shadow: 0 0 5px rgba(0,255,102,0.4); }
-        .badge-suspended { color: #ff0033; font-weight: bold; text-shadow: 0 0 5px rgba(255,0,51,0.4); }
-        .badge-scope { background: #1c0205; padding: 2px 6px; border-radius: 2px; color: #ff6666; border: 1px solid #44000a; display: inline-block; margin: 2px; }
+        .btn-container { display: flex; justify-content: flex-end; margin-top: 35px; }
+        .submit-btn { background: #d4af37; border: none; color: #000; padding: 14px 40px; font-weight: 600; font-size: 0.75rem; letter-spacing: 2px; text-transform: uppercase; cursor: pointer; transition: all 0.3s; }
+        .submit-btn:hover { background: #fff; box-shadow: 0 4px 15px rgba(255,255,255,0.1); }
         
-        /* Beautiful Single Line Button Action Framework */
-        .actions-wrapper { display: flex; flex-direction: row; flex-wrap: nowrap; gap: 4px; justify-content: flex-start; align-items: center; width: max-content; }
-        .btn-action { padding: 5px 10px; border-radius: 2px; font-size: 0.7rem; font-weight: bold; text-decoration: none; cursor: pointer; border: 1px solid transparent; font-family: monospace; display: inline-block; text-align: center; white-space: nowrap; transition: 0.2s; }
-        .btn-edit { background: #000000; border-color: #ffcc00; color: #ffcc00; }
-        .btn-edit:hover { background: #ffcc00; color: #000; box-shadow: 0 0 8px #ffcc00; }
-        .btn-reset { background: #000000; border-color: #00ccff; color: #00ccff; }
-        .btn-reset:hover { background: #00ccff; color: #000; box-shadow: 0 0 8px #00ccff; }
-        .btn-toggle { background: #000000; border-color: #00ff66; color: #00ff66; }
-        .btn-toggle:hover { background: #00ff66; color: #000; box-shadow: 0 0 8px #00ff66; }
-        .btn-toggle.suspended { border-color: #ff0055; color: #ff0055; }
-        .btn-toggle.suspended:hover { background: #ff0055; color: #fff; box-shadow: 0 0 8px #ff0055; }
-        .btn-del { background: #ff0033; color: #000; border-color: #ff0033; }
-        .btn-del:hover { background: #ff3366; color: #fff; box-shadow: 0 0 8px #ff3366; }
+        /* Unified Linear Row Execution Styling Matrix */
+        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; text-align: left; }
+        th { color: #8e8e93; font-weight: 400; padding-bottom: 15px; border-bottom: 1px solid #1c1c1e; letter-spacing: 1.5px; text-transform: uppercase; font-size: 0.7rem; }
+        td { padding: 16px 10px; border-bottom: 1px solid #121212; vertical-align: middle; color: #e5e5e7; }
+        .badge-active { color: #30d158; font-weight: 500; }
+        .badge-suspended { color: #ff453a; font-weight: 500; }
+        .badge-scope { background: #121212; padding: 3px 8px; color: #d4af37; border: 1px solid #1c1c1e; display: inline-block; margin: 2px; font-size: 0.65rem; letter-spacing: 0.5px; }
+        
+        /* Absolute Single Line Button Panel Framework */
+        .actions-wrapper { display: flex; flex-direction: row; flex-wrap: nowrap; gap: 6px; justify-content: flex-start; align-items: center; width: max-content; }
+        .btn-action { padding: 6px 14px; font-size: 0.65rem; font-weight: 500; text-decoration: none; cursor: pointer; border: 1px solid transparent; display: inline-block; text-align: center; white-space: nowrap; transition: all 0.2s; letter-spacing: 1px; text-transform: uppercase; }
+        .btn-edit { background: transparent; border-color: #d4af37; color: #d4af37; }
+        .btn-edit:hover { background: #d4af37; color: #000; }
+        .btn-reset { background: transparent; border-color: #0a84ff; color: #0a84ff; }
+        .btn-reset:hover { background: #0a84ff; color: #fff; }
+        .btn-toggle { background: transparent; border-color: #30d158; color: #30d158; }
+        .btn-toggle:hover { background: #30d158; color: #000; }
+        .btn-toggle.suspended { border-color: #ff453a; color: #ff453a; }
+        .btn-toggle.suspended:hover { background: #ff453a; color: #fff; }
+        .btn-del { background: #ff453a; color: #fff; border-color: #ff453a; }
+        .btn-del:hover { background: #ff3b30; box-shadow: 0 2px 8px rgba(255,69,58,0.3); }
 
-        /* Hacker Calculator / Analytics Matrix System Design */
-        .analytics-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px; margin-bottom: 25px; }
-        .analyzer-card { background: #040001; border: 1px solid #44000a; border-radius: 2px; padding: 15px; position: relative; overflow: hidden; }
-        .analyzer-title { font-size: 0.7rem; color: #aa2222; margin-bottom: 8px; letter-spacing: 1px; }
-        .analyzer-value { font-size: 1.4rem; color: #ff3333; font-weight: bold; text-shadow: 0 0 8px rgba(255,0,51,0.3); }
-        .metric-bar-bg { width: 100%; height: 5px; background: #1a0004; border-radius: 2px; margin-top: 10px; position: relative; }
-        .metric-bar-fill { height: 100%; background: #ff0033; width: 0%; box-shadow: 0 0 8px #ff0033; transition: width 1s ease-in-out; }
+        /* Pop-Up Modal Architectures */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); justify-content: center; align-items: center; z-index: 1001; backdrop-filter: blur(5px); }
+        .modal-content { background: #0c0c0c; border: 1px solid #1c1c1e; padding: 40px; width: 90%; max-width: 650px; max-height: 85vh; overflow-y: auto; }
+        .modal-title { color: #d4af37; font-weight: 300; font-size: 1.2rem; margin-bottom: 25px; letter-spacing: 2px; text-transform: uppercase; }
+        .close-modal { float: right; color: #8e8e93; cursor: pointer; font-size: 1.5rem; transition: color 0.2s; }
+        .close-modal:hover { color: #fff; }
 
-        /* Modal Structure Setup */
-        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); justify-content: center; align-items: center; z-index: 1000; }
-        .modal-content { background: #070101; border: 2px solid #ff0033; border-radius: 4px; padding: 30px; width: 90%; max-width: 600px; max-height: 85vh; overflow-y: auto; box-shadow: 0 0 25px #ff0033; }
-        .modal-title { color: #ff0033; font-size: 1.1rem; margin-bottom: 20px; text-shadow: 0 0 5px #ff0033; }
-        .close-modal { float: right; color: #aa2222; cursor: pointer; font-size: 1.4rem; }
-        .close-modal:hover { color: #ff0033; }
-
-        @keyframes blinker { 0%, 100% { opacity: 1; } 50% { opacity: 0.85; } }
+        .alert-banner { background: rgba(214,175,55,0.04); border: 1px solid #d4af37; padding: 18px 25px; color: #d4af37; font-size: 0.75rem; margin-bottom: 35px; line-height: 1.6; letter-spacing: 0.5px; }
     </style>
 </head>
 <body>
 
     <div class="navbar">
-        <div class="brand">⚡ SHAYAN_EXPLORER // SYSTEM CORE</div>
-        <div class="dots-menu-container">
-            <button class="three-dots-btn" onclick="toggleDropdownMenu()">⋮</button>
-            <div class="dropdown-menu-content" id="mainDropdownMenu">
-                <div class="menu-user-tag">⚡ OPERATOR: {{ current_admin }}</div>
-                <a href="/dashboard">🏠 OVERVIEW CONSOLE</a>
-                <button onclick="openApisModal()">🌐 ACCESS GATEWAY URLS</button>
-                <a href="/logout" style="color: #ff0033; border-top: 1px solid #220005;">❌ SHUTDOWN SESSION</a>
+        <div class="profile-container" onclick="openSidebarMenu()">
+            <div class="avatar-frame">
+                <svg viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-12.5c-2.48 0-4.5 2.02-4.5 4.5s2.02 4.5 4.5 4.5 4.5-2.02 4.5-4.5-2.02-4.5-4.5-4.5zm0 7c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                </svg>
+            </div>
+            <div>
+                <div class="brand-title">SHAYAN EXPLORER</div>
+                <div class="brand-subtitle">ATELIER EXECUTIVE SYSTEM</div>
             </div>
         </div>
     </div>
 
-    <div class="section-title">📊 METRIC ANALYSIS DEVIATION GRAPH</div>
-    <div class="analytics-grid">
-        {% for m_title, m_count, m_pct in telemetry_metrics %}
-        <div class="analyzer-card">
-            <div class="analyzer-title">ROUTE INTERCEPT: {{ m_title }}</div>
-            <div class="analyzer-value">{{ m_count }} <span style="font-size: 0.75rem; color:#550011;">CALLS</span></div>
-            <div class="metric-bar-bg">
-                <div class="metric-bar-fill" style="width: {{ m_pct }}%;"></div>
+    <div class="sidebar-overlay" id="menuOverlay" onclick="closeSidebarMenu()"></div>
+    <div class="sidebar" id="menuSidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-avatar-large">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="#d4af37">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/>
+                </svg>
             </div>
+            <div class="sidebar-user">OPERATOR: {{ current_admin }}</div>
         </div>
-        {% endfor %}
+        <div class="sidebar-links">
+            <a class="sidebar-item" onclick="closeSidebarMenu(); scrollToSection('analytics-anchor');">📊 OVERVIEW DEVIATION METRICS</a>
+            <a class="sidebar-item" onclick="closeSidebarMenu(); scrollToSection('provision-anchor');">🔑 PROVISION SYSTEM KEY</a>
+            <a class="sidebar-item" onclick="closeSidebarMenu(); scrollToSection('registry-anchor');">🗂️ KEY REGISTRY MATRIX</a>
+            <button class="sidebar-item" onclick="closeSidebarMenu(); openApisModal();">🌐 VIEW GATEWAY ROUTE URLS</button>
+            <a href="/logout" class="sidebar-item" style="margin-top: 30px; border-color: #ff453a; color: #ff453a;">❌ SHUTDOWN SESSION</a>
+        </div>
     </div>
 
-    <div class="section-title">• PROPOSE SYSTEM COMMUNICATIONS KEY</div>
-    <div class="card">
-        <form method="POST" action="/keys/generate">
-            <div class="grid-2">
-                <div class="input-box">
-                    <label>TARGET OWNER IDENTITY NAME</label>
-                    <input type="text" name="owner" placeholder="e.g. Premium Client" required autocomplete="off">
-                </div>
-                <div class="input-box">
-                    <label>CUSTOM ASSIGNMENT STRING (TOKEN KEY)</label>
-                    <input type="text" name="token" placeholder="Auto-generate tracking hash if empty" autocomplete="off">
-                </div>
-            </div>
-            <div class="grid-2">
-                <div class="input-box">
-                    <label>DAILY VELOCITY CALL LIMIT VOLUME</label>
-                    <input type="number" name="limit" value="2500" required>
-                </div>
-                <div class="input-box">
-                    <label>TARGET EXPIRATION LIFECYCLE</label>
-                    <input type="text" name="expiry_date" placeholder="Type 'LIFETIME ACCESS' or YYYY-MM-DD" value="LIFETIME ACCESS">
-                </div>
-            </div>
-            <div class="tools-header">
-                <div>ROUTE AUTHORIZATION PRIVILEGES MATRIX SCOPE</div>
-                <div style="color: #ff0033; cursor:pointer;" onclick="toggleAllTools('create-form')">[ SELECT ALL TOOLS ]</div>
-            </div>
-            <div class="tools-grid" id="create-form">
-                {% for tool in tools %}
-                <label class="tool-check">
-                    <input type="checkbox" name="scopes" value="{{ tool }}" class="tool-checkbox"> {{ tool }}
-                </label>
-                {% endfor %}
-            </div>
-            <div class="btn-container">
-                <button type="submit" class="submit-btn">PROVISION_KEY_GATEWAY</button>
-            </div>
-        </form>
-    </div>
+    <div class="main-container">
+        
+        <div class="alert-banner">
+            ⚠️ <strong>STATELESS ENGINE NOTICE:</strong> Dynamic keys created below via the web interface will reset when Vercel scales down. To ensure a key remains <strong>permanent and never gets deleted</strong>, simply add it to the <code>PERMANENT_STATIC_KEYS</code> mapping dictionary at the top of your <code>api/index.py</code> backend source file.
+        </div>
 
-    <div class="section-title">• KEY REGISTRY MATRIX OVERVIEW</div>
-    <div class="card" style="overflow-x: auto;">
-        <table>
-            <thead>
-                <tr>
-                    <th>OWNER IDENTITY</th>
-                    <th>AUTHORIZATION TOKEN KEY</th>
-                    <th>EXPIRY TIMELINE</th>
-                    <th>USAGE VELOCITY</th>
-                    <th>STATUS</th>
-                    <th>ROUTE SCOPE PRIVILEGES</th>
-                    <th>SYSTEM CONFIGURATION INTERVENTIONS</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for row in rows %}
-                {{ row }}
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+        <div id="analytics-anchor" class="section-title">📊 CALL TRANSACTION CALCULATION MATRIX</div>
+        <div class="analytics-grid">
+            {% for m_title, m_count, m_pct in telemetry_metrics %}
+            <div class="analyzer-card">
+                <div class="analyzer-title">ROUTE DEVIATION: {m_title}</div>
+                <div class="analyzer-value">{m_count} <span style="font-size: 0.75rem; color:#8e8e93;">TRANSACTIONS</span></div>
+                <div class="metric-bar-bg">
+                    <div class="metric-bar-fill" style="width: {m_pct}%;"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
 
-    <div class="section-title">• OPERATOR SECURITY ACCESS TIMELOGS</div>
-    <div class="card" style="overflow-x: auto;">
-        <table>
-            <thead>
-                <tr>
-                    <th>AUTHENTICATION TIMESTAMP</th>
-                    <th>IDENTIFIED USER</th>
-                    <th>SYSTEM EVENT TRACE</th>
-                    <th>SECURITY CLEARANCE LAYER</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for s_log in session_logs_html %}
-                {{ s_log }}
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+        <div id="provision-anchor" class="section-title">🔑 PROPOSE SYSTEM COMMUNICATIONS KEY</div>
+        <div class="card">
+            <form method="POST" action="/keys/generate">
+                <div class="grid-2">
+                    <div class="input-box">
+                        <label>TARGET OWNER IDENTITY NAME</label>
+                        <input type="text" name="owner" placeholder="e.g. Prestige Client Profile" required autocomplete="off">
+                    </div>
+                    <div class="input-box">
+                        <label>CUSTOM ASSIGNMENT TRACKING STRING (TOKEN KEY)</label>
+                        <input type="text" name="token" placeholder="Leave empty for automated system generation hash" autocomplete="off">
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="input-box">
+                        <label>DAILY CALL VOLUME VELOCITY LIMIT</label>
+                        <input type="number" name="limit" value="5000" required>
+                    </div>
+                    <div class="input-box">
+                        <label>EXPIRATION LIFECYCLE DATE & TIME (YYYY-MM-DD HH:MM:SS)</label>
+                        <input type="text" name="expiry_date" placeholder="Type 'LIFETIME ACCESS' or specify a exact timestamp" value="LIFETIME ACCESS">
+                    </div>
+                </div>
+                
+                <div class="tools-header">
+                    <div>ROUTE AUTHORIZATION PRIVILEGES MATRIX SCOPES</div>
+                    <div style="color: #d4af37; cursor:pointer;" onclick="toggleAllTools('create-form')">[ SELECT ALL TOOLS ]</div>
+                </div>
+                <div class="tools-grid" id="create-form">
+                    {% for tool in tools %}
+                    <label class="tool-check">
+                        <input type="checkbox" name="scopes" value="{{ tool }}" class="tool-checkbox"> {{ tool }}
+                    </label>
+                    {% endfor %}
+                </div>
+                <div class="btn-container">
+                    <button type="submit" class="submit-btn">PROVISION GATEWAY KEY</button>
+                </div>
+            </form>
+        </div>
 
-    <div class="section-title">• INTERCEPTED REQUEST STREAMS PIPELINE LOGS</div>
-    <div class="card" style="overflow-x: auto;">
-        <table>
-            <thead>
-                <tr>
-                    <th>TIME INTERCEPTED</th>
-                    <th>EXECUTING KEY TOKEN ID</th>
-                    <th>ENDPOINT ROUTE CALL</th>
-                    <th>QUERY DATA PARAMETERS PASSED</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for log in logs %}
-                {{ log }}
-                {% endfor %}
-            </tbody>
-        </table>
+        <div id="registry-anchor" class="section-title">🗂️ AUTHORIZED REGISTRY CONFIGURATION MATRIX</div>
+        <div class="card" style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>OWNER IDENTITY</th>
+                        <th>AUTHORIZATION TOKEN KEY</th>
+                        <th>EXPIRY TIMELINE STATE</th>
+                        <th>USAGE VELOCITY TRACKER</th>
+                        <th>STATUS LAYERS</th>
+                        <th>AUTHORIZED SCOPES</th>
+                        <th>SYSTEM INTERVENTIONS</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    {{ row }}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section-title">📡 LIVE INTERCEPTED REQUEST STREAMS PIPELINE LOGS</div>
+        <div class="card" style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>TIMESTAMP INTERCEPTED</th>
+                        <th>EXECUTING KEY STRING TOKEN</th>
+                        <th>TARGET GATEWAY ROUTE</th>
+                        <th>QUERY METRIC ARGUMENTS PASSED</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in logs %}
+                    {{ log }}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
     </div>
 
     <div id="editModal" class="modal">
         <div class="modal-content">
             <span class="close-modal" onclick="closeEditModal()">&times;</span>
-            <div class="modal-title">🔧 MODIFY MATRIX AUTHORIZATION parameters</div>
+            <div class="modal-title">🔧 MODIFY MATRIX AUTHORIZATION PRIVILEGES</div>
             <form method="POST" action="/keys/edit">
                 <input type="hidden" name="old_token" id="edit_old_token">
                 <div class="grid-2">
@@ -319,23 +356,23 @@ DASHBOARD_HTML = """
                         <input type="text" name="owner" id="edit_owner" required autocomplete="off">
                     </div>
                     <div class="input-box">
-                        <label>RE-ASSIGN KEY STRING</label>
+                        <label>RE-ASSIGN SECURE STRING KEY</label>
                         <input type="text" name="token" id="edit_token" required autocomplete="off">
                     </div>
                 </div>
                 <div class="grid-2">
                     <div class="input-box">
-                        <label>LIMIT VOLUME</label>
+                        <label>LIMIT VOLUME VELOCITY</label>
                         <input type="number" name="limit" id="edit_limit" required>
                     </div>
                     <div class="input-box">
-                        <label>EXPIRATION LIFECYCLE</label>
+                        <label>EXPIRATION LIFECYCLE DATE TIME</label>
                         <input type="text" name="expiry_date" id="edit_expiry" required>
                     </div>
                 </div>
                 <div class="tools-header">
                     <div>ROUTE PRIVILEGES MATRIX SCOPES</div>
-                    <div style="color: #ff0033; cursor:pointer;" onclick="toggleAllTools('edit-form')">[ TOGGLE ALL SCOPES ]</div>
+                    <div style="color: #d4af37; cursor:pointer;" onclick="toggleAllTools('edit-form')">[ TOGGLE ALL SCOPES ]</div>
                 </div>
                 <div class="tools-grid" id="edit-form">
                     {% for tool in tools_edit %}
@@ -345,36 +382,39 @@ DASHBOARD_HTML = """
                     {% endfor %}
                 </div>
                 <div class="btn-container">
-                    <button type="submit" class="submit-btn" style="background: #ffcc00; color:#000;">COMMIT PARAMS UPDATE</button>
+                    <button type="submit" class="submit-btn" style="background: #fff; color:#000;">COMMIT UPDATED PARAMETERS</button>
                 </div>
             </form>
         </div>
     </div>
 
     <div id="apisModal" class="modal">
-        <div class="modal-content" style="max-width: 750px; border-color:#ff0033; box-shadow: 0 0 20px #ff0033;">
+        <div class="modal-content" style="max-width: 750px;">
             <span class="close-modal" onclick="closeApisModal()">&times;</span>
-            <div class="modal-title">🌐 LIVE ROUTE TARGET STRINGS</div>
-            <div id="urls-list" style="max-height: 50vh; overflow-y:auto; font-family: monospace; background:#000; padding:15px; border-radius:2px; border:1px solid #33000a;">
+            <div class="modal-title">🌐 OPEN SYSTEM PATHWAYS (ACCESS WITHOUT KEYS VIEW)</div>
+            <div style="font-size:0.75rem; color:#8e8e93; margin-bottom:20px; letter-spacing: 0.5px;">Direct query routing paths for your system client requests:</div>
+            <div id="urls-list" style="max-height: 50vh; overflow-y:auto; font-family: monospace; background:#121212; padding:20px; border:1px solid #1c1c1e;">
             </div>
         </div>
     </div>
 
     <script>
-        function toggleDropdownMenu() {
-            let menu = document.getElementById('mainDropdownMenu');
-            menu.style.display = (menu.style.display === 'block') ? 'none' : 'block';
+        function openSidebarMenu() {
+            document.getElementById('menuOverlay').classList.add('open');
+            document.getElementById('menuSidebar').classList.add('open');
         }
-        window.onclick = function(event) {
-            if (!event.target.matches('.three-dots-btn')) {
-                let dropdowns = document.getElementsByClassName("dropdown-menu-content");
-                for (let i = 0; i < dropdowns.length; i++) {
-                    dropdowns[i].style.display = "none";
-                }
+        function closeSidebarMenu() {
+            document.getElementById('menuOverlay').classList.remove('open');
+            document.getElementById('menuSidebar').classList.remove('open');
+        }
+        function scrollToSection(id) {
+            const target = document.getElementById(id);
+            if(target) {
+                window.scrollTo({ top: target.offsetTop - 100, behavior: 'smooth' });
             }
         }
         function toggleAllTools(containerId) {
-            let checkboxes = document.querySelectorAll('#' + containerId + ' input[type=\"checkbox\"]');
+            let checkboxes = document.querySelectorAll('#' + containerId + ' input[type="checkbox"]');
             let allChecked = Array.from(checkboxes).every(cb => cb.checked);
             checkboxes.forEach(cb => cb.checked = !allChecked);
         }
@@ -400,7 +440,7 @@ DASHBOARD_HTML = """
             container.innerHTML = '';
             tools.forEach(t => {
                 let lower = t.toLowerCase();
-                container.innerHTML += `<div style="margin-bottom:12px; border-bottom:1px solid #220005; padding-bottom:6px;"><span style="color:#ff0033;">[GET]</span> ${currentHost}/api/${lower}?key=<span style="color:#00ff66;">YOUR_KEY</span>&param=value</div>`;
+                container.innerHTML += `<div style="margin-bottom:14px; border-bottom:1px solid #1c1c1e; padding-bottom:8px; color:#e5e5e7;"><span style="color:#d4af37; font-weight:bold;">[GET]</span> ${currentHost}/api/${lower}?key=<span style="color:#30d158;">YOUR_KEY</span>&param=value</div>`;
             });
             document.getElementById('apisModal').style.display = 'flex';
         }
@@ -410,7 +450,7 @@ DASHBOARD_HTML = """
 </html>
 """
 
-# --- SESSIONS & REBOOT PROTECTION MIDDLEWARE ---
+# --- AUTHENTICATION ENFORCEMENT ENGINE ---
 def check_session(request: Request, session_token: Optional[str] = Depends(cookie_sec)):
     if not session_token or session_token != "authenticated_shayan_session":
         raise HTTPException(status_code=303, headers={"Location": "/"})
@@ -422,7 +462,7 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
         return RedirectResponse(url=exc.headers.get("Location"), status_code=303)
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
-# --- ROUTING CONSOLE PIPELINE ENGINE ---
+# --- PIPELINE ROUTING ENTRY POINTS ---
 
 @app.get("/", response_class=HTMLResponse)
 def get_login_page():
@@ -431,35 +471,21 @@ def get_login_page():
 @app.post("/login")
 def handle_login(username: str = Form(...), password: str = Form(...)):
     if username == ADMIN_USER and password == ADMIN_PASS:
-        timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        SESSION_LOGS.append({
-            "time": timestamp_str,
-            "user": username,
-            "event": "SUCCESSFUL SYSTEM AUTHENTICATION INITIALIZED",
-            "clearance": "ROOT_ADMIN"
-        })
         response = RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
         response.set_cookie(key="session_token", value="authenticated_shayan_session", httponly=True)
         return response
-    
-    error_msg = '<div class="error">Access Denied: Bad Transmission Token Signature</div>'
+    error_msg = '<div class="error">Access Denied: Invalid Security Operator Key</div>'
     return HTMLResponse(content=LOGIN_HTML.replace('{% if error %}<div class="error">{{ error }}</div>{% endif %}', error_msg))
 
 @app.get("/logout")
 def handle_logout():
-    timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    SESSION_LOGS.append({
-        "time": timestamp_str,
-        "user": ADMIN_USER,
-        "event": "MANUAL CONSOLE SHUTDOWN TERMINATED BY OPERATOR",
-        "clearance": "EXPIRED"
-    })
     response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie("session_token")
     return response
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def get_dashboard(auth: bool = Depends(check_session)):
+    # Safely restore hardcoded permanent configuration matrix keys if Vercel cleaned running memory
     for k, v in PERMANENT_STATIC_KEYS.items():
         if k not in API_KEYS_DB: 
             API_KEYS_DB[k] = v
@@ -468,39 +494,31 @@ def get_dashboard(auth: bool = Depends(check_session)):
     
     # 1. Inject Tools lists
     tools_html = "".join([f'<label class="tool-check"><input type="checkbox" name="scopes" value="{t}"> {t}</label>' for t in AVAILABLE_TOOLS])
-    rendered = rendered.replace('{% for tool in tools %}\n                <label class="tool-check">\n                    <input type="checkbox" name="scopes" value="{{ tool }}" class="tool-checkbox"> {{ tool }}\n                </label>\n                {% endfor %}', tools_html)
+    rendered = rendered.replace('{% for tool in tools %}\n                    <label class="tool-check">\n                        <input type="checkbox" name="scopes" value="{{ tool }}" class="tool-checkbox"> {{ tool }}\n                    </label>\n                    {% endfor %}', tools_html)
     rendered = rendered.replace('{% for tool in tools_edit %}\n                    <label class="tool-check">\n                        <input type="checkbox" name="scopes" value="{{ tool }}" class="edit-tool-checkbox"> {{ tool }}\n                    </label>\n                    {% endfor %}', tools_html)
 
-    # 2. Render Mathematical Calculator Telemetry UI Bars
-    total_intercepted_calls = sum(ROUTE_USAGE_COUNTER.values())
-    telemetry_list = []
+    # 2. Render Mathematical Calculator Graph Telemetry
+    total_calls = sum(ROUTE_USAGE_COUNTER.values())
+    telemetry_list = sorted(ROUTE_USAGE_COUNTER.items(), key=lambda x: x[1], reverse=True)[:4]
     
-    # Take top 4 most used routes or show high-priority tracking items if empty
-    sorted_tools = sorted(ROUTE_USAGE_COUNTER.items(), key=lambda x: x[1], reverse=True)[:4]
-    for m_title, m_count in sorted_tools:
-        pct = (m_count / total_intercepted_calls * 100) if total_intercepted_calls > 0 else 0
-        if total_intercepted_calls == 0 and m_title in ["NUMBER", "UPI", "PAYTM", "VEHICLE"]:
-            pct = 0 # Default placeholder state visualization engine
-        telemetry_list.append((m_title, m_count, pct))
-        
-    # If no calls made yet, show standard 4 rows with 0 usage tracking
-    if total_intercepted_calls == 0:
+    if total_calls == 0:
         telemetry_list = [("NUMBER", 0, 0), ("UPI", 0, 0), ("PAYTM", 0, 0), ("VEHICLE", 0, 0)]
-
+    
     telemetry_html = ""
-    for title, cnt, p_fill in telemetry_list:
+    for title, cnt in telemetry_list[:4]:
+        pct = (cnt / total_calls * 100) if total_calls > 0 else 0
         telemetry_html += f"""
         <div class="analyzer-card">
-            <div class="analyzer-title">ROUTE INTERCEPT: {title}</div>
-            <div class="analyzer-value">{cnt} <span style="font-size: 0.75rem; color:#550011;">CALLS</span></div>
+            <div class="analyzer-title">ROUTE DEVIATION: {title}</div>
+            <div class="analyzer-value">{cnt} <span style="font-size: 0.75rem; color:#8e8e93;">TRANSACTIONS</span></div>
             <div class="metric-bar-bg">
-                <div class="metric-bar-fill" style="width: {p_fill}%;"></div>
+                <div class="metric-bar-fill" style="width: {pct}%;"></div>
             </div>
         </div>
         """
-    rendered = rendered.replace('{% for m_title, m_count, m_pct in telemetry_metrics %}\n        <div class="analyzer-card">\n            <div class="analyzer-title">ROUTE INTERCEPT: {{ m_title }}</div>\n            <div class="analyzer-value">{{ m_count }} <span style="font-size: 0.75rem; color:#550011;">CALLS</span></div>\n            <div class="metric-bar-bg">\n                <div class="metric-bar-fill" style="width: {{ m_pct }}%;"></div>\n            </div>\n        </div>\n        {% endfor %}', telemetry_html)
+    rendered = rendered.replace('{% for m_title, m_count, m_pct in telemetry_metrics %}\n            <div class="analyzer-card">\n                <div class="analyzer-title">ROUTE DEVIATION: {m_title}</div>\n                <div class="analyzer-value">{m_count} <span style="font-size: 0.75rem; color:#8e8e93;">TRANSACTIONS</span></div>\n                <div class="metric-bar-bg">\n                    <div class="metric-bar-fill" style="width: {m_pct}%;"></div>\n                </div>\n            </div>\n            {% endfor %}', telemetry_html)
 
-    # 3. Dynamic Rows Configuration (Clean Unified Layout to Avoid "Joker Layout Wrapping")
+    # 3. Dynamic Rows Layout Construction (Guaranteed No Button Word-Wrapping)
     rows_list = []
     for k, v in API_KEYS_DB.items():
         scopes_badges = "".join([f'<span class="badge-scope">{s}</span>' for s in v["scopes"]])
@@ -511,8 +529,8 @@ def get_dashboard(auth: bool = Depends(check_session)):
         row_ui = f"""
         <tr>
             <td>{v['owner']}</td>
-            <td style="color: #ff0033; font-weight:bold;">{v['token']}</td>
-            <td style="color: #ffaa00;">{v['expiry']}</td>
+            <td style="color: #d4af37; font-weight:500;">{v['token']}</td>
+            <td style="color: #a1a1a6;">{v['expiry']}</td>
             <td>{v['used']} / {v['limit']}</td>
             <td>{status_badge}</td>
             <td>{scopes_badges}</td>
@@ -527,41 +545,26 @@ def get_dashboard(auth: bool = Depends(check_session)):
         </tr>
         """
         rows_list.append(row_ui)
-    rendered = rendered.replace("{% for row in rows %}\n                {{ row }}\n                {% endfor %}", "".join(rows_list))
+    rendered = rendered.replace("{% for row in rows %}\n                    {{ row }}\n                    {% endfor %}", "".join(rows_list))
 
-    # 4. Session Tracker UI Parser
-    s_logs_html = []
-    for s_log in reversed(SESSION_LOGS[-5:]):
-        s_logs_html.append(f"""
-        <tr>
-            <td style="color:#ffcc00;">[{s_log['time']}]</td>
-            <td>{s_log['user']}</td>
-            <td style="color:#ff3366;">{s_log['event']}</td>
-            <td><span class="badge-scope" style="color:#00ff66; border-color:#004411;">{s_log['clearance']}</span></td>
-        </tr>
-        """)
-    if not s_logs_html:
-        s_logs_html.append('<tr><td colspan="4" style="text-align: center; color: #550011; padding: 12px 0;">No operator sessions tracked on current core context instance.</td></tr>')
-    rendered = rendered.replace("{% for s_log in session_logs_html %}\n                {{ s_log }}\n                {% endfor %}", "".join(s_logs_html))
-
-    # 5. Live Pipeline Request Intercept Streams
+    # 4. Live Gateway Proxy Intercept Logs
     logs_list = []
     for log in reversed(PIPELINE_LOGS[-10:]):
         logs_list.append(f"""
         <tr>
             <td>{log['time']}</td>
-            <td>{log['token']}</td>
-            <td><span class="badge-scope" style="color:#00ffff; border-color:#004444;">{log['route']}</span></td>
-            <td style="font-family: monospace; color: #888;">{log['params']}</td>
+            <td style="font-family:monospace; color:#8e8e93;">{log['token']}</td>
+            <td><span class="badge-scope" style="color:#fff; border-color:#2c2c2e;">{log['route']}</span></td>
+            <td style="font-family: monospace; color: #8e8e93;">{log['params']}</td>
         </tr>
         """)
     if not logs_list:
-        logs_list.append('<tr><td colspan="4" style="text-align: center; color: #550011; padding: 12px 0;">No raw system intercept streams pipeline detected.</td></tr>')
-    rendered = rendered.replace("{% for log in logs %}\n                {{ log }}\n                {% endfor %}", "".join(logs_list))
+        logs_list.append('<tr><td colspan="4" style="text-align: center; color: #8e8e93; padding: 15px 0;">No active proxy execution tracking logs found.</td></tr>')
+    rendered = rendered.replace("{% for log in logs %}\n                    {{ log }}\n                    {% endfor %}", "".join(logs_list))
 
     return rendered
 
-# --- API LIFECYCLE RESTRUCTURING MANAGEMENT ---
+# --- API LIFECYCLE CONTROLLERS ---
 
 @app.post("/keys/generate")
 def generate_key(owner: str = Form(...), token: Optional[str] = Form(None), limit: int = Form(...), expiry_date: Optional[str] = Form(None), scopes: List[str] = Form(None), auth: bool = Depends(check_session)):
@@ -611,18 +614,19 @@ def delete_key(token: str, auth: bool = Depends(check_session)):
     if token in PERMANENT_STATIC_KEYS: del PERMANENT_STATIC_KEYS[token]
     return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
-# --- CORE API PROXY GATEWAY INTEGRATION LAYER ---
+# --- CORE BACKEND PROXY GATEWAY ROUTE ---
 @app.get("/api/{route}")
 def proxy_gateway(route: str, request: Request, key: str):
+    # Ensure static variables remain active if runtime is refreshed
     for k, v in PERMANENT_STATIC_KEYS.items():
         if k not in API_KEYS_DB: API_KEYS_DB[k] = v
 
     if key not in API_KEYS_DB:
-        return JSONResponse(status_code=403, content={"error": "Access Revoked: Invalid Token Identification Matrix"})
+        return JSONResponse(status_code=403, content={"error": "Access Revoked: Invalid Identification Matrix Token"})
     
     key_profile = API_KEYS_DB[key]
     if key_profile["status"] != "Active":
-        return JSONResponse(status_code=403, content={"error": "Access Denied: This target API Key is currently SUSPENDED"})
+        return JSONResponse(status_code=403, content={"error": "Access Denied: Suspended Token Identification Framework"})
 
     current_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     query_params = dict(request.query_params)
@@ -630,20 +634,18 @@ def proxy_gateway(route: str, request: Request, key: str):
     
     PIPELINE_LOGS.append({"time": current_time_str, "token": key, "route": route.upper(), "params": str(query_params)})
     
-    # Increment Analytics Tracker Calculator Matrix counter
     route_upper = route.upper()
-    if route_upper in ROUTE_USAGE_COUNTER:
-        ROUTE_USAGE_COUNTER[route_upper] += 1
-    else:
-        ROUTE_USAGE_COUNTER[route_upper] = 1
+    ROUTE_USAGE_COUNTER[route_upper] = ROUTE_USAGE_COUNTER.get(route_upper, 0) + 1
 
     if "ALL" not in key_profile["scopes"] and route_upper not in key_profile["scopes"]:
         return JSONResponse(status_code=403, content={"error": f"Unauthorized Access Scope Framework for Sub-Tool: {route_upper}"})
 
     if key_profile["expiry"] != "LIFETIME ACCESS":
-        today_date = datetime.now().strftime("%Y-%m-%d")
-        if today_date > key_profile["expiry"]:
-            return JSONResponse(status_code=403, content={"error": "Token lifecycle execution window has expired."})
+        try:
+            if current_time_str > key_profile["expiry"]:
+                return JSONResponse(status_code=403, content={"error": "Token lifecycle operation window has expired."})
+        except Exception:
+            pass
             
     if key_profile["used"] >= key_profile["limit"]:
         return JSONResponse(status_code=429, content={"error": "Transaction call allocation volume limits fully exhausted."})
