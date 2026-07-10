@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
 from datetime import datetime
@@ -7,11 +7,11 @@ import secrets
 app = Flask(__name__)
 CORS(app)
 
-# Upstream engine destination configurations
+# Upstream Core Server Coordinates
 UPSTREAM_BASE_URL = "https://ft-osint-api.duckdns.org/api"
 MASTER_KEY = "explorer16"
 
-# Stateful tracking dictionaries (In-Memory Sandbox Storage)
+# In-Memory Database Architecture (Saves states within current execution cycles)
 API_KEYS_DB = {
     "vx-osint": {
         "owner": "Master Deployment",
@@ -26,7 +26,7 @@ API_KEYS_DB = {
 }
 PIPELINE_LOGS = []
 
-# Embedded UI Assets Panel (SHAYAN_EXPLORER HUB Theme Layout)
+# Raw HTML Dashboard Asset Injection (Protects string literals from Jinja parsing errors)
 HTML_DASHBOARD = '''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -51,7 +51,7 @@ HTML_DASHBOARD = '''<!DOCTYPE html>
 </head>
 <body class="p-4 md:p-8">
 
-    <!-- AUTHENTICATION GATEWAY CONTROLLER -->
+    <!-- ADMINISTRATIVE ACCESS PANEL -->
     <div id="login-screen" class="max-w-md mx-auto my-20 p-6 bg-[#12111a] rounded-lg glow-border">
         <h2 class="text-xl font-bold tracking-widest text-center mb-6 accent-purple">SHAYAN_EXPLORER HUB</h2>
         <div class="mb-4">
@@ -66,13 +66,13 @@ HTML_DASHBOARD = '''<!DOCTYPE html>
         <p id="login-err" class="text-red-500 text-xs mt-3 text-center hidden">Access credentials invalid.</p>
     </div>
 
-    <!-- MAIN INTERACTIVE HUB INTERFACE -->
+    <!-- MAIN INTERACTIVE OPERATIONS HUB -->
     <div id="dashboard-screen" class="max-w-6xl mx-auto hidden">
         
         <header class="flex justify-between items-center mb-8 border-b border-[#2d1b4e] pb-4">
             <div>
                 <h1 class="text-xl font-bold tracking-widest text-white uppercase">SHAYAN_EXPLORER HUB</h1>
-                <p class="text-[10px] text-gray-500">SYSTEM ARCHITECTURE: DEV SHAYAN_EXPLORER // INFRASTRUCTURE SECURE</p>
+                <p class="text-[10px] text-gray-500">SYSTEM ARCHITECTURE: DEV SHAYAN_EXPLORER // SYSTEM ACTIVE</p>
             </div>
             <div class="flex items-center gap-4">
                 <span class="text-xs border border-[#2d1b4e] px-3 py-1 rounded text-gray-400 uppercase tracking-wider text-[10px]">VIEW_SYSTEM_APIS</span>
@@ -80,7 +80,7 @@ HTML_DASHBOARD = '''<!DOCTYPE html>
             </div>
         </header>
 
-        <!-- SUB PANEL 01: KEY STRATEGY CREATION GENERATOR -->
+        <!-- OPERATIONS PANEL 01: KEY STRATEGY CONFIGURATOR -->
         <section class="bg-[#12111a] p-6 rounded-lg glow-border mb-8">
             <h2 class="text-xs font-bold tracking-widest accent-purple uppercase mb-4 flex items-center gap-2">
                 <span>●</span> PROPOSE SYSTEM COMMUNICATIONS KEY
@@ -93,7 +93,7 @@ HTML_DASHBOARD = '''<!DOCTYPE html>
                 </div>
                 <div>
                     <label class="block text-[10px] uppercase text-gray-400 mb-1">Custom Assignment String</label>
-                    <input type="text" id="new-token" placeholder="Random token string if left empty" class="w-full bg-[#1b1926] border border-[#2d1b4e] p-2 rounded text-xs text-white">
+                    <input type="text" id="new-token" placeholder="Random token if empty" class="w-full bg-[#1b1926] border border-[#2d1b4e] p-2 rounded text-xs text-white">
                 </div>
                 <div>
                     <label class="block text-[10px] uppercase text-gray-400 mb-1">Daily Call Limit Volume</label>
@@ -112,7 +112,7 @@ HTML_DASHBOARD = '''<!DOCTYPE html>
                 </div>
             </div>
 
-            <!-- PRIVILEGED SUB-ROUTE SECURITY SCOPES SELECTION INTERFACE -->
+            <!-- PRIVILEGED TOOL PATH ASSIGNMENT MATRIX -->
             <div class="mb-6">
                 <div class="flex justify-between items-center mb-2">
                     <label class="block text-[10px] uppercase text-gray-400">Route Authorization Privileges Scope</label>
@@ -139,7 +139,7 @@ HTML_DASHBOARD = '''<!DOCTYPE html>
                     <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="TG" class="scope-item accent-purple"> TG</label>
                     <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="TGIDINFO" class="scope-item accent-purple"> TGIDINFO</label>
                     <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="NUMLEAK" class="scope-item accent-purple"> NUMLEAK</label>
-                    <!-- Expanded API Catalog Implementations -->
+                    <!-- Expanded API Pipeline Modules -->
                     <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="PK" class="scope-item accent-purple"> PK</label>
                     <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="NAME" class="scope-item accent-purple"> NAME</label>
                     <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="AADHAR" class="scope-item accent-purple"> AADHAR</label>
@@ -156,7 +156,7 @@ HTML_DASHBOARD = '''<!DOCTYPE html>
             </div>
         </section>
 
-        <!-- SUB PANEL 02: AUTHORIZATION KEY TRACKING MATRIX -->
+        <!-- OPERATIONS PANEL 02: ACTIVE KEY TRACKING METRICS -->
         <section class="bg-[#12111a] p-6 rounded-lg glow-border mb-8">
             <h2 class="text-xs font-bold tracking-widest accent-purple uppercase mb-4 flex items-center gap-2">
                 <span>●</span> KEY REGISTRY MATRIX
@@ -179,7 +179,7 @@ HTML_DASHBOARD = '''<!DOCTYPE html>
             </div>
         </section>
 
-        <!-- SUB PANEL 03: LIVE REQUEST INTERCEPTION PIPE LOGS -->
+        <!-- OPERATIONS PANEL 03: TELEMETRY AND LOG DATA STREAMS -->
         <section class="bg-[#12111a] p-6 rounded-lg glow-border">
             <h2 class="text-xs font-bold tracking-widest text-amber-500 uppercase mb-4 flex items-center gap-2">
                 <span>●</span> INTERCEPTED REQUEST STREAMS PIPELINE LOGS
@@ -203,7 +203,7 @@ HTML_DASHBOARD = '''<!DOCTYPE html>
         </section>
     </div>
 
-    <!-- PIPELINE CLIENT DRIVER INTERACTION CONTROL LOGIC -->
+    <!-- MAIN APP CONTROLLER CORE ENGINE -->
     <script>
         if (localStorage.getItem("admin_authenticated") === "true") { showDashboard(); }
 
@@ -238,7 +238,10 @@ HTML_DASHBOARD = '''<!DOCTYPE html>
         }
 
         function toggleDateDisable(cb) { document.getElementById("new-expiry").disabled = cb.checked; }
-        function selectAllScopes() { document.querySelectorAll('.scope-item').forEach(checkbox => checkbox.checked = true); }
+        
+        function selectAllScopes() { 
+            document.querySelectorAll('.scope-item').forEach(checkbox => checkbox.checked = true); 
+        }
 
         function provisionKey() {
             const owner = document.getElementById("new-owner").value || "Client Profile";
@@ -284,17 +287,17 @@ HTML_DASHBOARD = '''<!DOCTYPE html>
                     const scopeDisplay = item.scopes.join(", ");
                     tbody.innerHTML += `
                         <tr class="border-b border-[#1b1926] hover:bg-[#161522]">
-                            <td class="py-3 text-white font-semibold">\${item.owner}</td>
-                            <td class="py-3 text-fuchsia-400 font-mono">\${item.key}</td>
-                            <td class="py-3 text-purple-300 font-bold text-[10px] uppercase">\${expiryDisplay}</td>
-                            <td class="py-3 text-gray-400">\${item.used_count} / <span class="text-gray-500">\${item.daily_limit}</span></td>
-                            <td class="py-3 \${statusColor} font-bold text-[10px] uppercase">\${item.status}</td>
-                            <td class="py-3 max-w-xs truncate text-gray-400 text-[10px]">\text{\${scopeDisplay}}</td>
+                            <td class="py-3 text-white font-semibold">${item.owner}</td>
+                            <td class="py-3 text-fuchsia-400 font-mono">${item.key}</td>
+                            <td class="py-3 text-purple-300 font-bold text-[10px] uppercase">${expiryDisplay}</td>
+                            <td class="py-3 text-gray-400">${item.used_count} / <span class="text-gray-500">${item.daily_limit}</span></td>
+                            <td class="py-3 ${statusColor} font-bold text-[10px] uppercase">${item.status}</td>
+                            <td class="py-3 max-w-xs truncate text-gray-400 text-[10px]" title="${scopeDisplay}">${scopeDisplay}</td>
                             <td class="py-3 text-right">
                                 <div class="inline-flex gap-1 text-[10px] font-bold">
-                                    <button onclick="fireKeyAction('\${item.key}', 'RESET')" class="px-2 py-0.5 rounded bg-blue-600/20 text-blue-400 border border-blue-600/30 hover:bg-blue-600/40">RESET</button>
-                                    <button onclick="fireKeyAction('\${item.key}', 'TOGGLE')" class="px-2 py-0.5 rounded bg-orange-600/20 text-orange-400 border border-orange-600/30 hover:bg-orange-600/40">TOGGLE</button>
-                                    <button onclick="fireKeyAction('\${item.key}', 'DEL')" class="px-2 py-0.5 rounded bg-rose-600/20 text-rose-400 border border-rose-600/30 hover:bg-rose-600/40">DEL</button>
+                                    <button onclick="fireKeyAction('${item.key}', 'RESET')" class="px-2 py-0.5 rounded bg-blue-600/20 text-blue-400 border border-blue-600/30 hover:bg-blue-600/40">RESET</button>
+                                    <button onclick="fireKeyAction('${item.key}', 'TOGGLE')" class="px-2 py-0.5 rounded bg-orange-600/20 text-orange-400 border border-orange-600/30 hover:bg-orange-600/40">TOGGLE</button>
+                                    <button onclick="fireKeyAction('${item.key}', 'DEL')" class="px-2 py-0.5 rounded bg-rose-600/20 text-rose-400 border border-rose-600/30 hover:bg-rose-600/40">DEL</button>
                                 </div>
                             </td>
                         </tr>`;
@@ -313,10 +316,10 @@ HTML_DASHBOARD = '''<!DOCTYPE html>
                     data.forEach(log => {
                         tbody.innerHTML += `
                             <tr class="border-b border-[#1b1926]">
-                                <td class="py-2 text-gray-500">\${log.timestamp}</td>
-                                <td class="py-2 text-fuchsia-400 font-mono">\${log.key_token}</td>
-                                <td class="py-2 text-sky-400 font-bold uppercase">/api/v1/\${log.route}</td>
-                                <td class="py-2 text-gray-300 break-all font-mono text-[10px]">\${log.parameters}</td>
+                                <td class="py-2 text-gray-500">${log.timestamp}</td>
+                                <td class="py-2 text-fuchsia-400 font-mono">${log.key_token}</td>
+                                <td class="py-2 text-sky-400 font-bold uppercase">/api/v1/${log.route}</td>
+                                <td class="py-2 text-gray-300 break-all font-mono text-[10px]">${log.parameters}</td>
                             </tr>`;
                     });
                 }
@@ -329,7 +332,8 @@ HTML_DASHBOARD = '''<!DOCTYPE html>
 @app.route('/', methods=['GET'])
 @app.route('/admin', methods=['GET'])
 def index_page():
-    return render_template_string(HTML_DASHBOARD)
+    # Fix: Returns the index directly as static HTML text to bypass Jinja compiling conflicts completely
+    return HTML_DASHBOARD, 200, {'Content-Type': 'text/html'}
 
 @app.route('/api/admin/login', methods=['POST'])
 def admin_login():
@@ -389,7 +393,7 @@ def key_action():
 def get_logs():
     return jsonify(PIPELINE_LOGS), 200
 
-# Proxy Routing Core Component & Branding Sanitizer
+# Proxy Architecture Controller
 @app.route('/api/v1/<endpoint>', methods=['GET'])
 def proxy_gateway(endpoint):
     client_key = request.args.get('key')
@@ -434,11 +438,11 @@ def proxy_gateway(endpoint):
         response = requests.get(f"{UPSTREAM_BASE_URL}/{endpoint}", params=downstream_params, timeout=12)
         content_type = response.headers.get('Content-Type', '')
         
-        # intercept and scrub branding if textual payload
+        # Intercept and modify textual content responses to substitute tags
         if "application/json" in content_type or "text/" in content_type:
             text_data = response.text
             
-            # Dynamic text substitutions replacement map
+            # Signature substitution layout mapping definitions
             replacements = {
                 "@ftgamer2": "@vernexzzz",
                 "https://t.me/lynx_api": "https://t.me/shayan_explorer_channel",
@@ -457,3 +461,4 @@ def proxy_gateway(endpoint):
 
 if __name__ == '__main__':
     app.run(port=3000, debug=True)
+
