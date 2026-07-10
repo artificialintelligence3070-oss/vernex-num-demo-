@@ -12,15 +12,13 @@ app = FastAPI(title="SHAYAN_EXPLORER LUXURY HUB")
 
 # --- CONFIGURATION & SECURITY ---
 TARGET_BASE_API = "https://ft-osint-api.duckdns.org/api"
-MASTER_KEY = "explorer16"
+MASTER_KEY = "shayan-exploindia"
 ADMIN_USER = "vernex"
 ADMIN_PASS = "vernex@16vx"
 
 cookie_sec = APIKeyCookie(name="session_token", auto_error=False)
 
-# ─── 🔒 PERMANENT HARDCODED KEYS MATRIX (NEVER DELETED BY VERCEL) ─────────────
-# 💡 Put your keys here! Because they are hardcoded in the file, they will 
-# survive Vercel cold-starts and will NEVER be automatically deleted.
+# ─── 🔒 PERMANENT HARDCODED KEYS MATRIX ──────────────────────────────────────
 PERMANENT_STATIC_KEYS = {
     "shayan-vip": {
         "owner": "Shayan Owner Account",
@@ -77,22 +75,21 @@ LOGIN_HTML = """
 <head>
     <title>SHAYAN EXPLORER - ATELIER</title>
     <style>
-        body { background-color: #0b0b0b; color: #f5f5f7; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .login-card { background: #121212; border: 1px solid #2c2c2e; padding: 50px 40px; border-radius: 0px; box-shadow: 0 20px 40px rgba(0,0,0,0.5); width: 340px; text-align: center; transition: all 0.5s ease; }
+        body { background-color: #0b0b0b; color: #f5f5f7; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .login-card { background: #121212; border: 1px solid #2c2c2e; padding: 50px 40px; border-radius: 0px; box-shadow: 0 20px 40px rgba(0,0,0,0.5); width: 340px; text-align: center; }
         h2 { color: #d4af37; font-weight: 300; font-size: 1.5rem; margin-bottom: 40px; letter-spacing: 4px; text-transform: uppercase; }
         .input-group { margin-bottom: 25px; text-align: left; }
         label { display: block; font-size: 0.7rem; color: #8e8e93; margin-bottom: 8px; letter-spacing: 2px; text-transform: uppercase; }
-        input { width: 100%; padding: 12px; background: #1c1c1e; border: 1px solid #2c2c2e; color: #fff; font-size: 0.9rem; box-sizing: border-box; transition: all 0.3s ease; font-family: inherit; }
-        input:focus { border-color: #d4af37; outline: none; background: #222; }
-        button { width: 100%; padding: 14px; background: #d4af37; border: none; color: #000; font-weight: 600; font-size: 0.8rem; letter-spacing: 2px; text-transform: uppercase; cursor: pointer; transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
-        button:hover { background: #fff; color: #000; box-shadow: 0 5px 15px rgba(255,255,255,0.1); }
-        .error { color: #ff3b30; font-size: 0.75rem; margin-bottom: 20px; letter-spacing: 1px; }
+        input { width: 100%; padding: 12px; background: #1c1c1e; border: 1px solid #2c2c2e; color: #fff; font-size: 0.9rem; box-sizing: border-box; transition: all 0.3s; }
+        input:focus { border-color: #d4af37; outline: none; }
+        button { width: 100%; padding: 14px; background: #d4af37; border: none; color: #000; font-weight: 600; font-size: 0.8rem; letter-spacing: 2px; text-transform: uppercase; cursor: pointer; transition: all 0.3s; }
+        button:hover { background: #fff; }
+        .error { color: #ff3b30; font-size: 0.75rem; margin-bottom: 20px; }
     </style>
 </head>
 <body>
     <div class="login-card">
         <h2>SHAYAN EXPLORER</h2>
-        {% if error %}<div class="error">{{ error }}</div>{% endif %}
         <form method="POST" action="/login">
             <div class="input-group">
                 <label>OPERATOR IDENTIFIER</label>
@@ -116,12 +113,11 @@ DASHBOARD_HTML = """
     <title>SHAYAN EXPLORER CONSOLE</title>
     <style>
         html { scroll-behavior: smooth; }
-        body { background-color: #070707; color: #e5e5e7; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; overflow-x: hidden; opacity: 0; animation: fadeInBody 0.8s cubic-bezier(0.25, 0.8, 0.25, 1) forwards; }
+        body { background-color: #070707; color: #e5e5e7; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; overflow-x: hidden; opacity: 0; animation: fadeInBody 0.8s ease forwards; }
         @keyframes fadeInBody { to { opacity: 1; } }
         
         .navbar { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1c1c1e; padding: 20px 40px; background: #0c0c0c; position: sticky; top: 0; z-index: 99; }
         
-        /* Premium Left-Side Profile Logo Menu Framework */
         .profile-container { display: flex; align-items: center; gap: 15px; cursor: pointer; padding: 5px; border-radius: 4px; transition: all 0.3s; }
         .profile-container:hover { background: #121212; }
         .avatar-frame { width: 42px; height: 42px; border-radius: 50%; border: 2px solid #d4af37; overflow: hidden; display: flex; justify-content: center; align-items: center; background: #1c1c1e; box-shadow: 0 0 10px rgba(212,175,55,0.2); }
@@ -129,62 +125,55 @@ DASHBOARD_HTML = """
         .brand-title { color: #fff; font-weight: 300; font-size: 1.1rem; letter-spacing: 3px; text-transform: uppercase; }
         .brand-subtitle { font-size: 0.65rem; color: #8e8e93; letter-spacing: 1px; margin-top: 2px; }
 
-        /* Luxury Architectural Sliding Sidebar */
         .sidebar-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 999; backdrop-filter: blur(4px); opacity: 0; transition: opacity 0.4s ease; }
         .sidebar { position: fixed; top: 0; left: -320px; width: 320px; height: 100%; background: #0c0c0c; border-right: 1px solid #1c1c1e; z-index: 1000; box-shadow: 20px 0 4px rgba(0,0,0,0.3); transition: left 0.4s cubic-bezier(0.05, 0.74, 0.2, 0.99); padding: 40px 30px; box-sizing: border-box; display: flex; flex-direction: column; }
         .sidebar.open { left: 0; }
         .sidebar-overlay.open { display: block; opacity: 1; }
         
         .sidebar-header { margin-bottom: 50px; border-bottom: 1px solid #1c1c1e; padding-bottom: 20px; text-align: center; }
-        .sidebar-avatar-large { width: 80px; height: 80px; border-radius: 50%; border: 1px solid #d4af37; margin: 0 auto 15px; display: flex; justify-content: center; align-items: center; background: #121212; box-shadow: 0 0 15px rgba(212,175,55,0.15); }
+        .sidebar-avatar-large { width: 80px; height: 80px; border-radius: 50%; border: 1px solid #d4af37; margin: 0 auto 15px; display: flex; justify-content: center; align-items: center; background: #121212; }
         .sidebar-user { font-size: 0.75rem; color: #8e8e93; letter-spacing: 2px; text-transform: uppercase; }
         .sidebar-links { display: flex; flex-direction: column; gap: 10px; }
         .sidebar-item { background: #121212; border: 1px solid #1c1c1e; color: #e5e5e7; padding: 15px 20px; font-size: 0.8rem; text-decoration: none; letter-spacing: 1px; text-transform: uppercase; transition: all 0.3s; cursor: pointer; text-align: left; }
-        .sidebar-item:hover { background: #d4af37; color: #000; border-color: #d4af37; font-weight: 600; box-shadow: 0 4px 12px rgba(212,175,55,0.2); }
+        .sidebar-item:hover { background: #d4af37; color: #000; border-color: #d4af37; font-weight: 600; }
         
-        /* Structural Layout Grid Containers */
         .main-container { padding: 40px; max-width: 1400px; margin: 0 auto; }
         .section-title { color: #d4af37; font-weight: 300; font-size: 1rem; margin-top: 50px; margin-bottom: 25px; letter-spacing: 3px; text-transform: uppercase; border-left: 2px solid #d4af37; padding-left: 15px; }
-        .card { background: #0c0c0c; border: 1px solid #1c1c1e; padding: 35px; margin-bottom: 30px; transition: transform 0.3s ease, box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        .card:hover { transform: translateY(-2px); border-color: #2c2c2e; }
+        .card { background: #0c0c0c; border: 1px solid #1c1c1e; padding: 35px; margin-bottom: 30px; }
         
         .grid-2 { display: grid; grid-template-columns: 1fr; gap: 25px; margin-bottom: 25px; }
         @media(min-width: 768px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
         .input-box { display: flex; flex-direction: column; }
         .input-box label { font-size: 0.65rem; color: #8e8e93; margin-bottom: 8px; letter-spacing: 2px; text-transform: uppercase; }
         .input-box input, .input-box select { background: #121212; border: 1px solid #1c1c1e; padding: 14px; color: #fff; font-size: 0.85rem; font-family: inherit; transition: all 0.3s; }
-        .input-box input:focus { border-color: #d4af37; outline: none; background: #161618; }
+        .input-box input:focus { border-color: #d4af37; outline: none; }
         
-        /* Premium Analytical Charts Component */
         .analytics-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; margin-bottom: 35px; }
         .analyzer-card { background: #0c0c0c; border: 1px solid #1c1c1e; padding: 20px; position: relative; }
         .analyzer-title { font-size: 0.65rem; color: #8e8e93; margin-bottom: 10px; letter-spacing: 2px; text-transform: uppercase; }
         .analyzer-value { font-size: 1.6rem; color: #fff; font-weight: 300; }
         .metric-bar-bg { width: 100%; height: 3px; background: #1c1c1e; margin-top: 15px; }
-        .metric-bar-fill { height: 100%; background: #d4af37; width: 0%; transition: width 1.2s cubic-bezier(0.1, 0.8, 0.25, 1); }
+        .metric-bar-fill { height: 100%; background: #d4af37; width: 0%; transition: width 1.2s ease; }
         
-        /* Elegant Form Sub-Selection Scopes List Grid */
         .tools-header { display: flex; justify-content: space-between; font-size: 0.65rem; margin-top: 30px; margin-bottom: 15px; color: #8e8e93; letter-spacing: 2px; text-transform: uppercase; }
         .tools-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
-        .tool-check { background: #121212; border: 1px solid #1c1c1e; padding: 12px; display: flex; align-items: center; font-size: 0.75rem; cursor: pointer; color: #a1a1a6; transition: all 0.2s; letter-spacing: 1px; }
-        .tool-check:hover { border-color: #d4af37; color: #fff; background: #161618; }
+        .tool-check { background: #121212; border: 1px solid #1c1c1e; padding: 12px; display: flex; align-items: center; font-size: 0.75rem; cursor: pointer; color: #a1a1a6; transition: all 0.2s; }
+        .tool-check:hover { border-color: #d4af37; color: #fff; }
         .tool-check input { margin-right: 12px; accent-color: #d4af37; }
         
         .btn-container { display: flex; justify-content: flex-end; margin-top: 35px; }
         .submit-btn { background: #d4af37; border: none; color: #000; padding: 14px 40px; font-weight: 600; font-size: 0.75rem; letter-spacing: 2px; text-transform: uppercase; cursor: pointer; transition: all 0.3s; }
-        .submit-btn:hover { background: #fff; box-shadow: 0 4px 15px rgba(255,255,255,0.1); }
+        .submit-btn:hover { background: #fff; }
         
-        /* Unified Linear Row Execution Styling Matrix */
         table { width: 100%; border-collapse: collapse; font-size: 0.8rem; text-align: left; }
         th { color: #8e8e93; font-weight: 400; padding-bottom: 15px; border-bottom: 1px solid #1c1c1e; letter-spacing: 1.5px; text-transform: uppercase; font-size: 0.7rem; }
         td { padding: 16px 10px; border-bottom: 1px solid #121212; vertical-align: middle; color: #e5e5e7; }
         .badge-active { color: #30d158; font-weight: 500; }
         .badge-suspended { color: #ff453a; font-weight: 500; }
-        .badge-scope { background: #121212; padding: 3px 8px; color: #d4af37; border: 1px solid #1c1c1e; display: inline-block; margin: 2px; font-size: 0.65rem; letter-spacing: 0.5px; }
+        .badge-scope { background: #121212; padding: 3px 8px; color: #d4af37; border: 1px solid #1c1c1e; display: inline-block; margin: 2px; font-size: 0.65rem; }
         
-        /* Absolute Single Line Button Panel Framework */
         .actions-wrapper { display: flex; flex-direction: row; flex-wrap: nowrap; gap: 6px; justify-content: flex-start; align-items: center; width: max-content; }
-        .btn-action { padding: 6px 14px; font-size: 0.65rem; font-weight: 500; text-decoration: none; cursor: pointer; border: 1px solid transparent; display: inline-block; text-align: center; white-space: nowrap; transition: all 0.2s; letter-spacing: 1px; text-transform: uppercase; }
+        .btn-action { padding: 6px 14px; font-size: 0.65rem; font-weight: 500; text-decoration: none; cursor: pointer; border: 1px solid transparent; display: inline-block; text-align: center; transition: all 0.2s; letter-spacing: 1px; text-transform: uppercase; }
         .btn-edit { background: transparent; border-color: #d4af37; color: #d4af37; }
         .btn-edit:hover { background: #d4af37; color: #000; }
         .btn-reset { background: transparent; border-color: #0a84ff; color: #0a84ff; }
@@ -194,16 +183,14 @@ DASHBOARD_HTML = """
         .btn-toggle.suspended { border-color: #ff453a; color: #ff453a; }
         .btn-toggle.suspended:hover { background: #ff453a; color: #fff; }
         .btn-del { background: #ff453a; color: #fff; border-color: #ff453a; }
-        .btn-del:hover { background: #ff3b30; box-shadow: 0 2px 8px rgba(255,69,58,0.3); }
+        .btn-del:hover { background: #ff3b30; }
 
-        /* Pop-Up Modal Architectures */
         .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); justify-content: center; align-items: center; z-index: 1001; backdrop-filter: blur(5px); }
         .modal-content { background: #0c0c0c; border: 1px solid #1c1c1e; padding: 40px; width: 90%; max-width: 650px; max-height: 85vh; overflow-y: auto; }
         .modal-title { color: #d4af37; font-weight: 300; font-size: 1.2rem; margin-bottom: 25px; letter-spacing: 2px; text-transform: uppercase; }
-        .close-modal { float: right; color: #8e8e93; cursor: pointer; font-size: 1.5rem; transition: color 0.2s; }
+        .close-modal { float: right; color: #8e8e93; cursor: pointer; font-size: 1.5rem; }
         .close-modal:hover { color: #fff; }
-
-        .alert-banner { background: rgba(214,175,55,0.04); border: 1px solid #d4af37; padding: 18px 25px; color: #d4af37; font-size: 0.75rem; margin-bottom: 35px; line-height: 1.6; letter-spacing: 0.5px; }
+        .alert-banner { background: rgba(214,175,55,0.04); border: 1px solid #d4af37; padding: 18px 25px; color: #d4af37; font-size: 0.75rem; margin-bottom: 35px; line-height: 1.6; }
     </style>
 </head>
 <body>
@@ -230,7 +217,7 @@ DASHBOARD_HTML = """
                     <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/>
                 </svg>
             </div>
-            <div class="sidebar-user">OPERATOR: {{ current_admin }}</div>
+            <div class="sidebar-user">OPERATOR: </div>
         </div>
         <div class="sidebar-links">
             <a class="sidebar-item" onclick="closeSidebarMenu(); scrollToSection('analytics-anchor');">📊 OVERVIEW DEVIATION METRICS</a>
@@ -249,16 +236,7 @@ DASHBOARD_HTML = """
 
         <div id="analytics-anchor" class="section-title">📊 CALL TRANSACTION CALCULATION MATRIX</div>
         <div class="analytics-grid">
-            {% for m_title, m_count, m_pct in telemetry_metrics %}
-            <div class="analyzer-card">
-                <div class="analyzer-title">ROUTE DEVIATION: {m_title}</div>
-                <div class="analyzer-value">{m_count} <span style="font-size: 0.75rem; color:#8e8e93;">TRANSACTIONS</span></div>
-                <div class="metric-bar-bg">
-                    <div class="metric-bar-fill" style="width: {m_pct}%;"></div>
-                </div>
             </div>
-            {% endfor %}
-        </div>
 
         <div id="provision-anchor" class="section-title">🔑 PROPOSE SYSTEM COMMUNICATIONS KEY</div>
         <div class="card">
@@ -280,7 +258,7 @@ DASHBOARD_HTML = """
                     </div>
                     <div class="input-box">
                         <label>EXPIRATION LIFECYCLE DATE & TIME (YYYY-MM-DD HH:MM:SS)</label>
-                        <input type="text" name="expiry_date" placeholder="Type 'LIFETIME ACCESS' or specify a exact timestamp" value="LIFETIME ACCESS">
+                        <input type="text" name="expiry_date" placeholder="Type 'LIFETIME ACCESS' or specify an exact timestamp" value="LIFETIME ACCESS">
                     </div>
                 </div>
                 
@@ -289,12 +267,7 @@ DASHBOARD_HTML = """
                     <div style="color: #d4af37; cursor:pointer;" onclick="toggleAllTools('create-form')">[ SELECT ALL TOOLS ]</div>
                 </div>
                 <div class="tools-grid" id="create-form">
-                    {% for tool in tools %}
-                    <label class="tool-check">
-                        <input type="checkbox" name="scopes" value="{{ tool }}" class="tool-checkbox"> {{ tool }}
-                    </label>
-                    {% endfor %}
-                </div>
+                    </div>
                 <div class="btn-container">
                     <button type="submit" class="submit-btn">PROVISION GATEWAY KEY</button>
                 </div>
@@ -316,10 +289,7 @@ DASHBOARD_HTML = """
                     </tr>
                 </thead>
                 <tbody>
-                    {% for row in rows %}
-                    {{ row }}
-                    {% endfor %}
-                </tbody>
+                    </tbody>
             </table>
         </div>
 
@@ -335,10 +305,7 @@ DASHBOARD_HTML = """
                     </tr>
                 </thead>
                 <tbody>
-                    {% for log in logs %}
-                    {{ log }}
-                    {% endfor %}
-                </tbody>
+                    </tbody>
             </table>
         </div>
 
@@ -375,12 +342,7 @@ DASHBOARD_HTML = """
                     <div style="color: #d4af37; cursor:pointer;" onclick="toggleAllTools('edit-form')">[ TOGGLE ALL SCOPES ]</div>
                 </div>
                 <div class="tools-grid" id="edit-form">
-                    {% for tool in tools_edit %}
-                    <label class="tool-check">
-                        <input type="checkbox" name="scopes" value="{{ tool }}" class="edit-tool-checkbox"> {{ tool }}
-                    </label>
-                    {% endfor %}
-                </div>
+                    </div>
                 <div class="btn-container">
                     <button type="submit" class="submit-btn" style="background: #fff; color:#000;">COMMIT UPDATED PARAMETERS</button>
                 </div>
@@ -392,7 +354,7 @@ DASHBOARD_HTML = """
         <div class="modal-content" style="max-width: 750px;">
             <span class="close-modal" onclick="closeApisModal()">&times;</span>
             <div class="modal-title">🌐 OPEN SYSTEM PATHWAYS (ACCESS WITHOUT KEYS VIEW)</div>
-            <div style="font-size:0.75rem; color:#8e8e93; margin-bottom:20px; letter-spacing: 0.5px;">Direct query routing paths for your system client requests:</div>
+            <div style="font-size:0.75rem; color:#8e8e93; margin-bottom:20px;">Direct query routing paths for your system client requests:</div>
             <div id="urls-list" style="max-height: 50vh; overflow-y:auto; font-family: monospace; background:#121212; padding:20px; border:1px solid #1c1c1e;">
             </div>
         </div>
@@ -409,9 +371,7 @@ DASHBOARD_HTML = """
         }
         function scrollToSection(id) {
             const target = document.getElementById(id);
-            if(target) {
-                window.scrollTo({ top: target.offsetTop - 100, behavior: 'smooth' });
-            }
+            if(target) { window.scrollTo({ top: target.offsetTop - 100, behavior: 'smooth' }); }
         }
         function toggleAllTools(containerId) {
             let checkboxes = document.querySelectorAll('#' + containerId + ' input[type="checkbox"]');
@@ -440,7 +400,7 @@ DASHBOARD_HTML = """
             container.innerHTML = '';
             tools.forEach(t => {
                 let lower = t.toLowerCase();
-                container.innerHTML += `<div style="margin-bottom:14px; border-bottom:1px solid #1c1c1e; padding-bottom:8px; color:#e5e5e7;"><span style="color:#d4af37; font-weight:bold;">[GET]</span> ${currentHost}/api/${lower}?key=<span style="color:#30d158;">YOUR_KEY</span>&param=value</div>`;
+                container.innerHTML += `<div style="margin-bottom:14px; border-bottom:1px solid #1c1c1e; padding-bottom:8px;"><span style="color:#d4af37; font-weight:bold;">[GET]</span> ${currentHost}/api/${lower}?key=<span style="color:#30d158;">YOUR_KEY</span>&param=value</div>`;
             });
             document.getElementById('apisModal').style.display = 'flex';
         }
@@ -466,7 +426,7 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
 
 @app.get("/", response_class=HTMLResponse)
 def get_login_page():
-    return LOGIN_HTML.replace("{% if error %}<div class=\"error\">{{ error }}</div>{% endif %}", "")
+    return LOGIN_HTML.replace("", "")
 
 @app.post("/login")
 def handle_login(username: str = Form(...), password: str = Form(...)):
@@ -475,7 +435,7 @@ def handle_login(username: str = Form(...), password: str = Form(...)):
         response.set_cookie(key="session_token", value="authenticated_shayan_session", httponly=True)
         return response
     error_msg = '<div class="error">Access Denied: Invalid Security Operator Key</div>'
-    return HTMLResponse(content=LOGIN_HTML.replace('{% if error %}<div class="error">{{ error }}</div>{% endif %}', error_msg))
+    return HTMLResponse(content=LOGIN_HTML.replace('', error_msg))
 
 @app.get("/logout")
 def handle_logout():
@@ -485,24 +445,24 @@ def handle_logout():
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def get_dashboard(auth: bool = Depends(check_session)):
-    # Safely restore hardcoded permanent configuration matrix keys if Vercel cleaned running memory
     for k, v in PERMANENT_STATIC_KEYS.items():
         if k not in API_KEYS_DB: 
             API_KEYS_DB[k] = v
 
-    rendered = DASHBOARD_HTML.replace("{{ current_admin }}", ADMIN_USER)
+    rendered = DASHBOARD_HTML.replace("", ADMIN_USER)
     
-    # 1. Inject Tools lists
     tools_html = "".join([f'<label class="tool-check"><input type="checkbox" name="scopes" value="{t}"> {t}</label>' for t in AVAILABLE_TOOLS])
-    rendered = rendered.replace('{% for tool in tools %}\n                    <label class="tool-check">\n                        <input type="checkbox" name="scopes" value="{{ tool }}" class="tool-checkbox"> {{ tool }}\n                    </label>\n                    {% endfor %}', tools_html)
-    rendered = rendered.replace('{% for tool in tools_edit %}\n                    <label class="tool-check">\n                        <input type="checkbox" name="scopes" value="{{ tool }}" class="edit-tool-checkbox"> {{ tool }}\n                    </label>\n                    {% endfor %}', tools_html)
+    tools_edit_html = "".join([f'<label class="tool-check"><input type="checkbox" name="scopes" value="{t}" class="edit-tool-checkbox"> {t}</label>' for t in AVAILABLE_TOOLS])
+    
+    rendered = rendered.replace('', tools_html)
+    rendered = rendered.replace('', tools_edit_html)
 
-    # 2. Render Mathematical Calculator Graph Telemetry
+    # FIXED: Restructured default metrics tuple layout to prevent 'ValueError: too many values to unpack'
     total_calls = sum(ROUTE_USAGE_COUNTER.values())
     telemetry_list = sorted(ROUTE_USAGE_COUNTER.items(), key=lambda x: x[1], reverse=True)[:4]
     
     if total_calls == 0:
-        telemetry_list = [("NUMBER", 0, 0), ("UPI", 0, 0), ("PAYTM", 0, 0), ("VEHICLE", 0, 0)]
+        telemetry_list = [("NUMBER", 0), ("UPI", 0), ("PAYTM", 0), ("VEHICLE", 0)]
     
     telemetry_html = ""
     for title, cnt in telemetry_list[:4]:
@@ -516,9 +476,8 @@ def get_dashboard(auth: bool = Depends(check_session)):
             </div>
         </div>
         """
-    rendered = rendered.replace('{% for m_title, m_count, m_pct in telemetry_metrics %}\n            <div class="analyzer-card">\n                <div class="analyzer-title">ROUTE DEVIATION: {m_title}</div>\n                <div class="analyzer-value">{m_count} <span style="font-size: 0.75rem; color:#8e8e93;">TRANSACTIONS</span></div>\n                <div class="metric-bar-bg">\n                    <div class="metric-bar-fill" style="width: {m_pct}%;"></div>\n                </div>\n            </div>\n            {% endfor %}', telemetry_html)
+    rendered = rendered.replace('', telemetry_html)
 
-    # 3. Dynamic Rows Layout Construction (Guaranteed No Button Word-Wrapping)
     rows_list = []
     for k, v in API_KEYS_DB.items():
         scopes_badges = "".join([f'<span class="badge-scope">{s}</span>' for s in v["scopes"]])
@@ -545,9 +504,8 @@ def get_dashboard(auth: bool = Depends(check_session)):
         </tr>
         """
         rows_list.append(row_ui)
-    rendered = rendered.replace("{% for row in rows %}\n                    {{ row }}\n                    {% endfor %}", "".join(rows_list))
+    rendered = rendered.replace("", "".join(rows_list))
 
-    # 4. Live Gateway Proxy Intercept Logs
     logs_list = []
     for log in reversed(PIPELINE_LOGS[-10:]):
         logs_list.append(f"""
@@ -560,7 +518,7 @@ def get_dashboard(auth: bool = Depends(check_session)):
         """)
     if not logs_list:
         logs_list.append('<tr><td colspan="4" style="text-align: center; color: #8e8e93; padding: 15px 0;">No active proxy execution tracking logs found.</td></tr>')
-    rendered = rendered.replace("{% for log in logs %}\n                    {{ log }}\n                    {% endfor %}", "".join(logs_list))
+    rendered = rendered.replace("", "".join(logs_list))
 
     return rendered
 
@@ -617,7 +575,6 @@ def delete_key(token: str, auth: bool = Depends(check_session)):
 # --- CORE BACKEND PROXY GATEWAY ROUTE ---
 @app.get("/api/{route}")
 def proxy_gateway(route: str, request: Request, key: str):
-    # Ensure static variables remain active if runtime is refreshed
     for k, v in PERMANENT_STATIC_KEYS.items():
         if k not in API_KEYS_DB: API_KEYS_DB[k] = v
 
