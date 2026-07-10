@@ -12,27 +12,43 @@ app = FastAPI(title="SHAYAN_EXPLORER HUB API")
 
 # --- CONFIGURATION & SECURITY ---
 TARGET_BASE_API = "https://ft-osint-api.duckdns.org/api"
-MASTER_KEY = "explorer16"
+MASTER_KEY = "shayan-exploindia"
 ADMIN_USER = "vernex"
 ADMIN_PASS = "vernex@16vx"
 
 cookie_sec = APIKeyCookie(name="session_token", auto_error=False)
 
-# --- PERSISTENCE LAYER (In-Memory Simulation for Serverless) ---
-API_KEYS_DB = {
+# ─── 🔒 PERMANENT STATIC KEYS REGISTRY MATRIX ──────────────────────────────────
+# Add your custom keys here! These will NEVER be deleted when Vercel sleeps or resets.
+PERMANENT_STATIC_KEYS = {
     "vx-osint": {
-        "owner": "Master Deployment",
+        "owner": "Master Deployment Default",
         "token": "vx-osint",
         "expiry": "LIFETIME ACCESS",
-        "limit": 5000,
+        "limit": 999999,
+        "used": 0,
+        "status": "Active",
+        "scopes": ["ALL"]
+    },
+    # 📝 YOU CAN ADD MORE PERMANENT KEYS BELOW FOLLOWING THIS EXACT FORMAT:
+    "shayan-custom-key-123": {
+        "owner": "Premium Client 1",
+        "token": "shayan-custom-key-123",
+        "expiry": "2028-12-31",
+        "limit": 10000,
         "used": 0,
         "status": "Active",
         "scopes": ["ALL"]
     }
 }
+
+# --- EPHEMERAL LIVE STORAGE MATRIX ---
+# Runtime generated keys will merge here dynamically
+API_KEYS_DB = {}
+API_KEYS_DB.update(PERMANENT_STATIC_KEYS)
+
 PIPELINE_LOGS = []
 
-# Expanded tools tracking database matrix matching your exact request
 AVAILABLE_TOOLS = [
     "ADV", "PAYTM", "IMEI", "CALLTRACER", "UPI", "IFSC", "NUMBER", "PINCODE",
     "IP", "CHALLAN", "FF", "BGMI", "SNAP", "EMAIL", "VEHICLE", "GIT", "INSTA", 
@@ -42,10 +58,6 @@ AVAILABLE_TOOLS = [
 
 # --- BRANDING SANITIZATION ENGINE ---
 def white_label_filter(raw_content: str) -> str:
-    """
-    Scrub old provider links/handles and seamlessly replace them 
-    with your custom community routing signatures.
-    """
     replacements = {
         "@ftgamer2": "@vernexzzz",
         "ftgamer2": "@vernexzzz",
@@ -56,7 +68,6 @@ def white_label_filter(raw_content: str) -> str:
         "@bornex_ultra": "@vernexzzz",
         "@@bornex_ultra": "@vernexzzz"
     }
-    
     sanitized = raw_content
     for target, replacement in replacements.items():
         sanitized = sanitized.replace(target, replacement)
@@ -146,7 +157,7 @@ DASHBOARD_HTML = """
         </div>
     </div>
 
-    <div class="section-title">• PROPOSE SYSTEM COMMUNICATIONS KEY</div>
+    <div class="section-title">• PROPOSE SYSTEM COMMUNICATIONS KEY <span style="color:#6b7280; font-size:0.7rem;">(Note: UI-generated keys reset on Vercel reboot. Use code file for permanent storage)</span></div>
     <div class="card">
         <form method="POST" action="/keys/generate">
             <div class="grid-2">
@@ -358,12 +369,19 @@ def generate_key(owner: str = Form(...), token: Optional[str] = Form(None), limi
 def delete_key(token: str, auth: bool = Depends(check_session)):
     if token in API_KEYS_DB:
         del API_KEYS_DB[token]
+    if token in PERMANENT_STATIC_KEYS:
+        del PERMANENT_STATIC_KEYS[token]
     return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
 
 # --- CORE API PROXY INTEGRATION LAYER ---
 @app.get("/api/{route}")
 def proxy_gateway(route: str, request: Request, key: str):
+    # Auto-reload permanent configuration on execution trigger in case of a serverless reset
+    for k, v in PERMANENT_STATIC_KEYS.items():
+        if k not in API_KEYS_DB:
+            API_KEYS_DB[k] = v
+
     # 1. Validate Custom Key Existence
     if key not in API_KEYS_DB:
         return JSONResponse(status_code=403, content={"error": "Access Revoked: Invalid Token Identification Matrix"})
@@ -408,18 +426,16 @@ def proxy_gateway(route: str, request: Request, key: str):
         upstream_response = requests.get(target_url, params=upstream_params, timeout=12)
         
         # --- WHITE LABEL CONVERSION MATRICES ---
-        # Intercept response text format and execute branding substitution strings safely
         cleaned_text_payload = white_label_filter(upstream_response.text)
         
         try:
-            # Reconstruct clean object structures to output back to your API consumer
             json_response_payload = json.loads(cleaned_text_payload)
             return JSONResponse(status_code=upstream_response.status_code, content=json_response_payload)
         except json.JSONDecodeError:
-            # Fallback wrapper string format response matrix protection
             return HTMLResponse(status_code=upstream_response.status_code, content=cleaned_text_payload)
             
     except requests.exceptions.RequestException as exc:
         return JSONResponse(status_code=502, content={"error": "Upstream communication gateway failure", "details": str(exc)})
+
 
 
