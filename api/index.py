@@ -1,595 +1,396 @@
 import os
-import uuid
-import httpx
+import time
+import requests
 from datetime import datetime
 from typing import List, Optional
-from fastapi import FastAPI, Request, Form, HTTPException, Cookie
+from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.security import APIKeyCookie
 
-app = FastAPI(title="SHAYAN_EXPLORER Gateway Platform")
+app = FastAPI(title="SHAYAN_EXPLORER HUB API")
 
-# --- CORE CONFIGURATION ---
-DEVELOPER_NAME = "SHAYAN_EXPLORER"
-DEVELOPER_CREDIT = "@vernexzzz"
-TELEGRAM_CHANNEL = "https://t.me/shayan_explorer_channel"
-
-UPSTREAM_API_BASE = "https://ft-osint-api.duckdns.org/api"
-UPSTREAM_MASTER_KEY = "vernex-6a9dc4fdd5923c40b0aba27bf1e39e3f"
-
+# --- CONFIGURATION & SECURITY ---
+TARGET_BASE_API = "https://ft-osint-api.duckdns.org/api"
+MASTER_KEY = "shayan-exploindia"
 ADMIN_USER = "vernex"
 ADMIN_PASS = "vernex@16vx"
-SESSION_TOKEN = "vx_session_secure_token_2026"
 
-# 🚀 Add any keys here that you want to work FOREVER without wiping out on Vercel
-PERMANENT_KEYS = {
+cookie_sec = APIKeyCookie(name="session_token", auto_error=False)
+
+# --- PERSISTENCE LAYER (In-Memory Simulation for Serverless) ---
+# Note: For production, bind these dictionaries to a persistent DB
+API_KEYS_DB = {
     "vx-osint": {
-        "name": "Master Deployment Key",
+        "owner": "Master Deployment",
+        "token": "vx-osint",
+        "expiry": "LIFETIME ACCESS",
         "limit": 5000,
         "used": 0,
-        "expiry": "Lifetime",
-        "tools": ["all"],
-        "status": "Active"
-    },
-    "shayan-vip": {
-        "name": "Official Bot Key",
-        "limit": 99999,
-        "used": 0,
-        "expiry": "Lifetime",
-        "tools": ["all"],
-        "status": "Active"
-    },
-    "test-key-1": {
-        "name": "Premium Customer Key",
-        "limit": 10000,
-        "used": 0,
-        "expiry": "Lifetime",
-        "tools": ["all"],
-        "status": "Active"
+        "status": "Active",
+        "scopes": ["ALL"]
     }
 }
+PIPELINE_LOGS = []
 
-# Complete list of your requested API endpoints + custom ones
 AVAILABLE_TOOLS = [
-    "pk", "name", "aadhar", "upi", "numtoupi", "pan", "vehicle", 
-    "veh2num", "adharfamily", "bomber", "adv", "paytm", "imei", 
-    "calltracer", "ifsc", "number", "pincode", "ip", "challan", 
-    "ff", "bgmi", "snap", "email", "git", "insta", "tg", "tgidinfo", "numleak"
+    "ADV", "PAYTM", "IMEI", "CALLTRACER", "UPI", "IFSC", "NUMBER", "PINCODE",
+    "IP", "CHALLAN", "FF", "BGMI", "SNAP", "EMAIL", "VEHICLE", "GIT", "INSTA", 
+    "TG", "TGIDINFO", "NUMLEAK"
 ]
 
-# Temporary memory store (Resets when Vercel serverless instances go idle)
-API_KEYS_DB = {}
-REQUEST_LOGS = []
-
-def is_authenticated(session: Optional[str] = Cookie(None)) -> bool:
-    return session == SESSION_TOKEN
-
-# --- API GATEWAY PROXY ROUTE ---
-@app.get("/api/{tool_name}")
-async def proxy_gateway(tool_name: str, request: Request):
-    params = dict(request.query_params)
-    client_key = params.get("key")
-    
-    credit_meta = {
-        "by": DEVELOPER_CREDIT,
-        "telegram": TELEGRAM_CHANNEL
-    }
-    
-    if not client_key:
-        return JSONResponse(
-            status_code=403, 
-            content={"status": "failed", "error": "Missing API Key parameter.", **credit_meta}
-        )
-    
-    # Check Permanent Hardcoded Registry first, then check Volatile DB
-    if client_key in PERMANENT_KEYS:
-        key_profile = PERMANENT_KEYS[client_key]
-    elif client_key in API_KEYS_DB:
-        key_profile = API_KEYS_DB[client_key]
-    else:
-        return JSONResponse(
-            status_code=403, 
-            content={"status": "failed", "error": "Invalid API key.", **credit_meta}
-        )
-        
-    if key_profile["status"] == "Suspended":
-        return JSONResponse(
-            status_code=403, 
-            content={"status": "failed", "error": "This access profile has been explicitly suspended.", **credit_meta}
-        )
-        
-    if key_profile["expiry"] != "Lifetime":
-        try:
-            expiry_dt = datetime.fromisoformat(key_profile["expiry"])
-            if datetime.now() > expiry_dt:
-                key_profile["status"] = "Suspended"
-                return JSONResponse(
-                    status_code=403, 
-                    content={"status": "failed", "error": "This allocation key has expired.", **credit_meta}
-                )
-        except Exception:
-            return JSONResponse(
-                status_code=500, 
-                content={"status": "failed", "error": "Key validation parsing anomaly encountered.", **credit_meta}
-            )
-
-    if key_profile["used"] >= key_profile["limit"]:
-        return JSONResponse(
-            status_code=429, 
-            content={"status": "failed", "error": "Volumetric threshold usage capacity exhausted for today.", **credit_meta}
-        )
-
-    if "all" not in key_profile["tools"] and tool_name not in key_profile["tools"]:
-        return JSONResponse(
-            status_code=403, 
-            content={"status": "failed", "error": f"Token lacks permission metrics for module: [{tool_name}].", **credit_meta}
-        )
-
-    # Track logging metrics
-    parsed_queries = ", ".join([f"{k}={v}" for k, v in params.items() if k != "key"])
-    key_profile["used"] += 1
-    REQUEST_LOGS.append({
-        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "key": client_key,
-        "tool": tool_name,
-        "query": parsed_queries if parsed_queries else "Direct Root Probe"
-    })
-
-    # Forward to upstream provider setup
-    params["key"] = UPSTREAM_MASTER_KEY
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.get(f"{UPSTREAM_API_BASE}/{tool_name}", params=params, timeout=15.0)
-            res_data = response.json()
-            
-            # Enforce branding onto every successful payload response
-            if isinstance(res_data, dict):
-                res_data["by"] = DEVELOPER_CREDIT
-                res_data["telegram"] = TELEGRAM_CHANNEL
-                
-            return JSONResponse(content=res_data, status_code=response.status_code)
-        except Exception:
-            return JSONResponse(
-                status_code=502, 
-                content={"status": "failed", "error": "Upstream proxy interface pipeline timeout.", **credit_meta}
-            )
-
-# --- UI CONTROLLERS ---
-@app.get("/", response_class=HTMLResponse)
-@app.get("/login", response_class=HTMLResponse)
-async def login_portal(session: Optional[str] = Cookie(None)):
-    if session == SESSION_TOKEN:
-        return RedirectResponse(url="/admin", status_code=303)
-        
-    return f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Control Center - Login</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-    </head>
-    <body class="bg-[#040406] text-zinc-100 flex items-center justify-center min-h-screen p-4">
-        <div class="w-full max-w-md bg-[#09090c] border border-zinc-800 p-8 rounded-3xl" style="box-shadow: 0 0 40px rgba(168, 85, 247, 0.15);">
-            <div class="text-center mb-8">
-                <h1 class="text-3xl font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-pink-500">{DEVELOPER_NAME}</h1>
-                <p class="text-[10px] font-mono text-zinc-500 tracking-widest uppercase mt-2">Platform Gateway Authorization Portal</p>
+# --- UI TEMPLATES (Embedded for seamless single-file Vercel deploy) ---
+LOGIN_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SHAYAN_EXPLORER HUB - Login</title>
+    <style>
+        body { background-color: #060608; color: #e2e8f0; font-family: 'Courier New', monospace; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .login-card { background: #0c0c12; border: 1px solid #bc13fe; padding: 40px; border-radius: 8px; box-shadow: 0 0 15px rgba(188, 19, 254, 0.2); width: 320px; }
+        h2 { color: #bc13fe; text-align: center; font-size: 1.4rem; margin-bottom: 30px; letter-spacing: 2px; }
+        .input-group { margin-bottom: 20px; }
+        label { display: block; font-size: 0.8rem; color: #8a8aa3; margin-bottom: 5px; }
+        input { width: 100%; padding: 10px; background: #13131c; border: 1px solid #27273a; color: #fff; border-radius: 4px; box-sizing: border-box; }
+        input:focus { border-color: #bc13fe; outline: none; }
+        button { width: 100%; padding: 12px; background: linear-gradient(90deg, #bc13fe, #7a13fe); border: none; color: white; font-weight: bold; cursor: pointer; border-radius: 4px; transition: 0.3s; }
+        button:hover { opacity: 0.9; box-shadow: 0 0 10px rgba(188, 19, 254, 0.5); }
+        .error { color: #ff4a4a; font-size: 0.8rem; text-align: center; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h2>SHAYAN_EXPLORER HUB</h2>
+        {% if error %}<div class="error">{{ error }}</div>{% endif %}
+        <form method="POST" action="/login">
+            <div class="input-group">
+                <label>IDENTITY USERNAME</label>
+                <input type="text" name="username" required>
             </div>
-            <form action="/login" method="POST" class="space-y-5">
-                <div>
-                    <label class="block text-[10px] font-mono uppercase tracking-widest text-zinc-400 mb-2">OPERATOR ID</label>
-                    <input type="text" name="username" required class="w-full bg-[#111116] border border-zinc-800 rounded-xl px-4 py-3 text-sm outline-none font-mono text-purple-300">
-                </div>
-                <div>
-                    <label class="block text-[10px] font-mono uppercase tracking-widest text-zinc-400 mb-2">CYPHER KEY</label>
-                    <input type="password" name="password" required class="w-full bg-[#111116] border border-zinc-800 rounded-xl px-4 py-3 text-sm outline-none font-mono text-pink-300">
-                </div>
-                <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-mono font-bold uppercase tracking-widest py-4 rounded-xl">INITIALIZE_HANDSHAKE</button>
-            </form>
-            <div class="mt-6 text-center">
-                <a href="{TELEGRAM_CHANNEL}" target="_blank" class="text-[10px] font-mono tracking-wider text-zinc-600 hover:text-purple-400 transition">POWERED BY {DEVELOPER_CREDIT}</a>
+            <div class="input-group">
+                <label>ACCESS SECURITY PASSWORD</label>
+                <input type="password" name="password" required>
             </div>
+            <button type="submit">INITIALIZE SESSION</button>
+        </form>
+    </div>
+</body>
+</html>
+"""
+
+DASHBOARD_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SHAYAN_EXPLORER HUB</title>
+    <style>
+        body { background-color: #060608; color: #d1d5db; font-family: 'Courier New', monospace; margin: 0; padding: 20px; }
+        .navbar { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f1f2e; padding-bottom: 15px; margin-bottom: 30px; }
+        .brand { color: #bc13fe; font-weight: bold; font-size: 1.2rem; letter-spacing: 1px; }
+        .nav-btn { background: #13131c; border: 1px solid #27273a; color: #8a8aa3; padding: 6px 12px; text-decoration: none; font-size: 0.8rem; border-radius: 4px; margin-left: 10px; }
+        .nav-btn:hover { border-color: #bc13fe; color: #fff; }
+        .section-title { color: #bc13fe; font-size: 0.9rem; margin-top: 40px; margin-bottom: 20px; letter-spacing: 1px; text-transform: uppercase; }
+        .card { background: #0c0c12; border: 1px solid #1f1f2e; padding: 25px; border-radius: 6px; margin-bottom: 25px; }
+        .grid-2 { display: grid; grid-template-columns: 1xl 1fr; gap: 20px; margin-bottom: 20px; }
+        @media(min-width: 768px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
+        .input-box { display: flex; flex-direction: column; }
+        .input-box label { font-size: 0.75rem; color: #6b7280; margin-bottom: 6px; }
+        .input-box input, .input-box select { background: #13131c; border: 1px solid #27273a; padding: 10px; color: #fff; border-radius: 4px; }
+        .input-box input:focus { border-color: #bc13fe; outline: none; }
+        .tools-header { display: flex; justify-content: space-between; font-size: 0.75rem; margin-top: 20px; margin-bottom: 10px; color: #6b7280; }
+        .tools-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+        .tool-check { background: #13131c; border: 1px solid #27273a; padding: 10px; border-radius: 4px; display: flex; align-items: center; font-size: 0.75rem; cursor: pointer; }
+        .tool-check input { margin-right: 10px; accent-color: #bc13fe; }
+        .btn-container { display: flex; justify-content: flex-end; margin-top: 25px; }
+        .submit-btn { background: linear-gradient(90deg, #bc13fe, #7a13fe); border: none; color: white; padding: 12px 24px; font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+        .submit-btn:hover { box-shadow: 0 0 10px rgba(188, 19, 254, 0.4); }
+        table { width: 100%; border-collapse: collapse; font-size: 0.75rem; text-align: left; }
+        th { color: #6b7280; font-weight: normal; padding-bottom: 12px; border-bottom: 1px solid #1f1f2e; }
+        td { padding: 12px 0; border-bottom: 1px solid #11111a; }
+        .badge-active { color: #10b981; font-weight: bold; }
+        .badge-scope { background: #27273a; padding: 2px 6px; border-radius: 3px; color: #d1d5db; }
+        .action-link { color: #ff4a4a; text-decoration: none; margin-left: 8px; }
+        .action-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+    <div class="navbar">
+        <div class="brand">• SHAYAN_EXPLORER HUB</div>
+        <div>
+            <a href="#" class="nav-btn">VIEW_SYSTEM_APIS</a>
+            <a href="/logout" class="nav-btn">LOGOUT</a>
         </div>
-    </body>
-    </html>
-    """
+    </div>
 
-@app.post("/login")
-async def process_login(username: str = Form(...), password: str = Form(...)):
+    <div class="section-title">• PROPOSE SYSTEM COMMUNICATIONS KEY</div>
+    <div class="card">
+        <form method="POST" action="/keys/generate">
+            <div class="grid-2">
+                <div class="input-box">
+                    <label>TARGET OWNER NAME</label>
+                    <input type="text" name="owner" placeholder="e.g. Client Profile" required>
+                </div>
+                <div class="input-box">
+                    <label>CUSTOM ASSIGNMENT STRING (KEY)</label>
+                    <input type="text" name="token" placeholder="Random token if empty">
+                </div>
+            </div>
+            <div class="grid-2">
+                <div class="input-box">
+                    <label>DAILY CALL LIMIT VOLUME</label>
+                    <input type="number" name="limit" value="2500" required>
+                </div>
+                <div class="input-box">
+                    <label>TARGET EXPIRATION LIFECYCLE</label>
+                    <input type="date" name="expiry_date" required>
+                </div>
+            </div>
+
+            <div class="tools-header">
+                <div>ROUTE AUTHORIZATION PRIVILEGES SCOPE</div>
+                <div style="color: #ff007f; cursor:pointer;" onclick="toggleAllTools()">Select All Available Sub-Tools</div>
+            </div>
+            
+            <div class="tools-grid">
+                {% for tool in tools %}
+                <label class="tool-check">
+                    <input type="checkbox" name="scopes" value="{{ tool }}" class="tool-checkbox"> {{ tool }}
+                </label>
+                {% endfor %}
+            </div>
+
+            <div class="btn-container">
+                <button type="submit" class="submit-btn">PROVISION_KEY</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="section-title">• KEY REGISTRY MATRIX</div>
+    <div class="card" style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>OWNER IDENTITY</th>
+                    <th>AUTHORIZATION TOKEN KEY</th>
+                    <th>DYNAMIC EXPIRY STATUS COUNTER</th>
+                    <th>USAGE VELOCITY</th>
+                    <th>STATUS</th>
+                    <th>ROUTE SCOPE PRIVILEGES</th>
+                    <th>SYSTEM CONFIGURATION INTERVENTIONS</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for k, v in keys_db.items() %}
+                <tr>
+                    <td>{{ v.owner }}</td>
+                    <td style="color: #bc13fe;">{{ v.token }}</td>
+                    <td style="color: #ff007f;">{{ v.expiry }}</td>
+                    <td>{{ v.used }} / {{ v.limit }}</td>
+                    <td><span class="badge-active">{{ v.status }}</span></td>
+                    <td>
+                        {% for scope in v.scopes %}
+                        <span class="badge-scope">{{ scope }}</span>
+                        {% endfor %}
+                    </td>
+                    <td>
+                        <a href="/keys/delete/{{ v.token }}" class="action-link">DEL</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section-title">• INTERCEPTED REQUEST STREAMS PIPELINE LOGS</div>
+    <div class="card" style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>TIME INTERCEPTED</th>
+                    <th>EXECUTING KEY TOKEN ID</th>
+                    <th>ENDPOINT ROUTE CALL</th>
+                    <th>QUERY DATA PARAMETERS PASSED</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if not logs %}
+                <tr>
+                    <td colspan="4" style="text-align: center; color: #6b7280; padding: 20px 0;">No active request stream metrics tracking currently.</td>
+                </tr>
+                {% endif %}
+                {% for log in logs %}
+                <tr>
+                    <td>{{ log.time }}</td>
+                    <td>{{ log.token }}</td>
+                    <td><span class="badge-scope" style="color:#00ffcc;">{{ log.route }}</span></td>
+                    <td style="font-family: monospace; color: #8a8aa3;">{{ log.params }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        function toggleAllTools() {
+            let checkboxes = document.querySelectorAll('.tool-checkbox');
+            let allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            checkboxes.forEach(cb => cb.checked = !allChecked);
+        }
+    </script>
+</body>
+</html>
+"""
+
+# --- MIDDLEWARE & AUTH FUNCTIONALITY ---
+def check_session(session_token: Optional[str] = Depends(cookie_sec)):
+    if not session_token or session_token != "authenticated_shayan_session":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    return True
+
+# --- ROUTING ENGINE ---
+
+@app.get("/", response_class=HTMLResponse)
+def get_login_page():
+    return LOGIN_HTML.replace("{% if error %}<div class=\"error\">{{ error }}</div>{% endif %}", "")
+
+@app.post("/login", response_class=HTMLResponse)
+def handle_login(username: str = Form(...), password: str = Form(...)):
     if username == ADMIN_USER and password == ADMIN_PASS:
-        response = RedirectResponse(url="/admin", status_code=303)
-        response.set_cookie(key="session", value=SESSION_TOKEN, httponly=True, samesite="lax")
+        response = RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+        response.set_cookie(key="session_token", value="authenticated_shayan_session", httponly=True)
         return response
-    return RedirectResponse(url="/login?error=invalid", status_code=303)
+    
+    error_msg = '<div class="error">Access Denied: Invalid System Credentials</div>'
+    return LOGIN_HTML.replace('{% if error %}<div class="error">{{ error }}</div>{% endif %}', error_msg)
 
 @app.get("/logout")
-async def logout_action():
-    response = RedirectResponse(url="/login", status_code=303)
-    response.delete_cookie("session")
+def handle_logout():
+    response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+    response.delete_cookie("session_token")
     return response
 
-@app.get("/admin", response_class=HTMLResponse)
-async def administration_dashboard(session: Optional[str] = Cookie(None)):
-    if not is_authenticated(session):
-        return RedirectResponse(url="/login", status_code=303)
-        
-    tool_options_html = "".join([f"""
-    <label class="flex items-center space-x-3 bg-[#111116] border border-zinc-800 p-3 rounded-xl cursor-pointer hover:border-zinc-700 transition">
-        <input type="checkbox" name="tools" value="{t}" class="rounded border-zinc-800 bg-zinc-900 text-purple-600 focus:ring-purple-500">
-        <span class="text-xs font-mono text-zinc-400 uppercase">{t}</span>
-    </label>
-    """ for t in AVAILABLE_TOOLS])
-
-    key_rows = []
-    # Merge both databases into dashboard monitor matrix display cleanly
-    COMBINED_REGISTRY = {**PERMANENT_KEYS, **API_KEYS_DB}
+@app.get("/dashboard", response_class=HTMLResponse)
+def get_dashboard(auth: bool = Depends(check_session)):
+    # Simple formatting engine replacement
+    rendered = DASHBOARD_HTML
     
-    for k, v in COMBINED_REGISTRY.items():
-        is_perm = k in PERMANENT_KEYS
-        badge_style = "text-fuchsia-400 bg-fuchsia-500/10 border-fuchsia-500/20" if is_perm else "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
-        status_label = "PERMANENT" if is_perm else v["status"]
-        tool_badges = " ".join([f'<span class="bg-zinc-900 text-zinc-400 border border-zinc-800 text-[10px] px-2 py-0.5 rounded font-mono uppercase">{t}</span>' for t in v["tools"]])
-        
-        row = f"""
-        <tr class="border-b border-zinc-800 bg-[#09090c]/40 hover:bg-[#111116]/80 transition">
-            <td class="p-4 font-semibold text-xs max-w-[130px] truncate">{v['name']}</td>
-            <td class="p-4 font-mono text-xs text-purple-400 select-all font-bold tracking-wider">{k}</td>
-            <td class="p-4 text-xs font-mono text-zinc-300 countdown-container" id='expiry-row-{k}' data-expiry='{v['expiry']}' data-key='{k}'>Evaluating...</td>
-            <td class="p-4 text-xs font-mono"><span class="text-pink-400 font-bold">{v['used']}</span> / {v['limit']}</td>
-            <td class="p-4"><span id='status-badge-{k}' class="px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full border {badge_style}">{status_label}</span></td>
-            <td class="p-4 max-w-[220px]"><div class="flex flex-wrap gap-1">{tool_badges}</div></td>
-            <td class="p-4 text-right">
-                <div class="inline-flex gap-1.5">
-                    {"<span class='text-[10px] font-mono text-zinc-600 p-1'>CODE_PROTECTED</span>" if is_perm else f'''
-                    <button onclick="triggerEditModal('{k}', '{v['name']}', {v['limit']}, '{','.join(v['tools'])}')" class="bg-purple-600/10 hover:bg-purple-600 border border-purple-500/20 px-2 py-1 text-[10px] font-mono rounded text-purple-400 hover:text-white transition">EDIT</button>
-                    <a href="/admin/reset/{k}" class="bg-pink-600/10 hover:bg-pink-600 border border-pink-500/20 px-2 py-1 text-[10px] font-mono rounded text-pink-400 hover:text-white transition">RESET</a>
-                    <a href="/admin/toggle/{k}" class="bg-amber-600/10 hover:bg-amber-600 border border-amber-500/20 px-2 py-1 text-[10px] font-mono rounded text-amber-400 hover:text-white transition">TOGGLE</a>
-                    <a href="/admin/delete/{k}" onclick="return confirm('Execute permanent removal?')" class="bg-red-600/10 hover:bg-red-600 border border-red-500/20 px-2 py-1 text-[10px] font-mono rounded text-red-400 hover:text-white transition">DEL</a>
-                    '''}
-                </div>
-            </td>
+    # Render loop for tools checkboxes
+    tools_html = "".join([f'<label class="tool-check"><input type="checkbox" name="scopes" value="{t}" class="tool-checkbox"> {t}</label>' for t in AVAILABLE_TOOLS])
+    rendered = rendered.replace("{% for tool in tools %}\n                <label class=\"tool-check\">\n                    <input type=\"checkbox\" name=\"scopes\" value=\"{{ tool }}\" class=\"tool-checkbox\"> {{ tool }}\n                </label>\n                {% endfor %}", tools_html)
+    
+    # Render table rows for Keys Database
+    rows_html = ""
+    for k, v in API_KEYS_DB.items():
+        scopes_badges = "".join([f'<span class="badge-scope">{s}</span>' for s in v["scopes"]])
+        rows_html += f"""
+        <tr>
+            <td>{v['owner']}</td>
+            <td style="color: #bc13fe;">{v['token']}</td>
+            <td style="color: #ff007f;">{v['expiry']}</td>
+            <td>{v['used']} / {v['limit']}</td>
+            <td><span class="badge-active">{v['status']}</span></td>
+            <td>{scopes_badges}</td>
+            <td><a href="/keys/delete/{v['token']}" class="action-link">DEL</a></td>
         </tr>
         """
-        key_rows.append(row)
+    rendered = rendered.replace("{% for k, v in keys_db.items() %}\n                <tr>\n                    <td>{{ v.owner }}</td>\n                    <td style=\"color: #bc13fe;\">{{ v.token }}</td>\n                    <td style=\"color: #ff007f;\">{{ v.expiry }}</td>\n                    <td>{{ v.used }} / {{ v.limit }}</td>\n                    <td><span class=\"badge-active\">{{ v.status }}</span></td>\n                    <td>\n                        {% for scope in v.scopes %}\n                        <span class=\"badge-scope\">{{ scope }}</span>\n                        {% endfor %}\n                    </td>\n                    <td>\n                        <a href=\"/keys/delete/{{ v.token }}\" class=\"action-link\">DEL</a>\n                    </td>\n                </tr>\n                {% endfor %}", rows_html)
 
-    log_rows = []
-    for log in reversed(REQUEST_LOGS):
-        log_rows.append(f"""
-        <tr class="border-b border-zinc-800 text-xs font-mono hover:bg-[#09090c] transition">
-            <td class="p-3 text-zinc-500 whitespace-nowrap">{log['time']}</td>
-            <td class="p-3 text-purple-400 select-all font-bold">{log['key']}</td>
-            <td class="p-3 text-pink-400 font-bold uppercase">{log['tool']}</td>
-            <td class="p-3 text-zinc-300 max-w-sm truncate select-all bg-zinc-950/50 rounded" title="{log['query']}">{log['query']}</td>
+    # Render pipeline logs
+    logs_html = ""
+    for log in reversed(PIPELINE_LOGS[-15:]): # Show last 15 elements
+        logs_html += f"""
+        <tr>
+            <td>{log['time']}</td>
+            <td>{log['token']}</td>
+            <td><span class="badge-scope" style="color:#00ffcc;">{log['route']}</span></td>
+            <td style="font-family: monospace; color: #8a8aa3;">{log['params']}</td>
         </tr>
-        """)
+        """
+    if logs_html:
+        rendered = rendered.replace("{% if not logs %}\n                <tr>\n                    <td colspan=\"4\" style=\"text-align: center; color: #6b7280; padding: 20px 0;\">No active request stream metrics tracking currently.</td>\n                </tr>\n                {% endif %}\n                {% for log in logs %}\n                <tr>\n                    <td>{{ log.time }}</td>\n                    <td>{{ log.token }}</td>\n                    <td><span class=\"badge-scope\" style=\"color:#00ffcc;\">{{ log.route }}</span></td>\n                    <td style=\"font-family: monospace; color: #8a8aa3;\">{{ log.params }}</td>\n                </tr>\n                {% endfor %}", logs_html)
+    else:
+        rendered = rendered.replace("{% for log in logs %}\n                <tr>\n                    <td>{{ log.time }}</td>\n                    <td>{{ log.token }}</td>\n                    <td><span class=\"badge-scope\" style=\"color:#00ffcc;\">{{ log.route }}</span></td>\n                    <td style=\"font-family: monospace; color: #8a8aa3;\">{{ log.params }}</td>\n                </tr>\n                {% endfor %}", "")
+
+    return rendered
+
+@app.post("/keys/generate")
+def generate_key(owner: str = Form(...), token: Optional[str] = Form(None), limit: int = Form(...), expiry_date: str = Form(...), scopes: List[str] = Form(None), auth: bool = Depends(check_session)):
+    key_token = token.strip() if token and token.strip() else f"vx-{int(time.time())}"
+    assigned_scopes = scopes if scopes else ["ALL"]
     
-    logs_table_body = "".join(log_rows) if log_rows else '<tr><td colspan="4" class="p-8 text-center text-zinc-600 font-mono text-xs">No active telemetry inputs.</td></tr>'
+    # Format date string cleanly
+    try:
+        parsed_date = datetime.strptime(expiry_date, "%Y-%m-%d").strftime("%Y-%m-%d")
+    except ValueError:
+        parsed_date = "LIFETIME ACCESS"
 
-    return f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>{DEVELOPER_NAME} Control Interface</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-    </head>
-    <body class="bg-[#040406] text-zinc-100 min-h-screen font-sans">
-        
-        <nav class="border-b border-zinc-800 bg-[#09090c]/90 sticky top-0 z-40 backdrop-blur px-4 py-4 md:px-8 flex justify-between items-center">
-            <div class="flex flex-col">
-                <span class="text-xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-pink-500 uppercase">{DEVELOPER_NAME} Hub</span>
-                <span class="text-[9px] font-mono text-zinc-500 tracking-wider">Managed by {DEVELOPER_CREDIT}</span>
-            </div>
-            <div class="flex items-center space-x-2">
-                <a href="{TELEGRAM_CHANNEL}" target="_blank" class="border border-pink-500/30 hover:border-pink-500 bg-pink-950/10 text-pink-400 text-xs font-mono py-1.5 px-4 rounded-xl transition">TELEGRAM_CHANNEL</a>
-                <button onclick="revealEndpointsModal()" class="border border-purple-500/30 hover:border-purple-500 bg-purple-950/20 text-purple-400 text-xs font-mono py-1.5 px-4 rounded-xl transition">VIEW_SYSTEM_APIS</button>
-                <a href="/logout" class="border border-zinc-800 hover:border-red-500 text-zinc-500 hover:text-red-400 text-xs font-mono py-1.5 px-4 rounded-xl transition">LOGOUT</a>
-            </div>
-        </nav>
-
-        <div class="max-w-7xl mx-auto p-4 md:p-8 space-y-8">
-            <section class="bg-[#09090c] border border-zinc-800 rounded-3xl p-6">
-                <h2 class="text-sm font-mono uppercase tracking-widest text-purple-400 mb-6 flex items-center gap-2">
-                    <span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Provision Temporary Session Key
-                </h2>
-                <form action="/admin/create" method="POST" class="space-y-6">
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div>
-                            <label class="block text-[10px] font-mono uppercase text-zinc-500 mb-2">Target Owner Name</label>
-                            <input type="text" name="name" required placeholder="e.g. Client Profile" class="w-full bg-[#111116] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none font-mono">
-                        </div>
-                        <div>
-                            <label class="block text-[10px] font-mono uppercase text-zinc-500 mb-2">Custom Assignment String</label>
-                            <input type="text" name="custom_key" placeholder="Random token if empty" class="w-full bg-[#111116] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none font-mono">
-                        </div>
-                        <div>
-                            <label class="block text-[10px] font-mono uppercase text-zinc-500 mb-2">Daily Call Limit Volume</label>
-                            <input type="number" name="limit" required placeholder="2500" class="w-full bg-[#111116] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none font-mono">
-                        </div>
-                        <div>
-                            <label class="block text-[10px] font-mono uppercase text-zinc-500 mb-2">Life Strategy</label>
-                            <div class="flex items-center space-x-3 bg-[#111116] border border-zinc-800 h-[38px] rounded-xl px-4">
-                                <input type="checkbox" id="lifetime_toggle" name="lifetime" value="true" onchange="adjustExpiryConstraintState(this)" class="rounded border-zinc-800 bg-zinc-900 text-purple-600">
-                                <label for="lifetime_toggle" class="text-xs font-mono text-zinc-400 cursor-pointer select-none">LIFETIME ACCESS TIER</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div id="expiry_date_container">
-                        <label class="block text-[10px] font-mono uppercase text-zinc-500 mb-2">Target Expiration Lifecycle</label>
-                        <input type="datetime-local" id="expiry_input" name="expiry" class="bg-[#111116] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 outline-none font-mono w-full md:w-1/4">
-                    </div>
-
-                    <div>
-                        <div class="flex justify-between items-center mb-3">
-                            <label class="block text-[10px] font-mono uppercase text-zinc-500">Route Authorization Privileges Scope</label>
-                            <button type="button" onclick="bulkToggleExecutionModules()" class="text-[10px] font-mono text-pink-400 hover:underline">Select All Available Sub-Tools</button>
-                        </div>
-                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2" id="tools_checkbox_grid">
-                            {tool_options_html}
-                        </div>
-                    </div>
-
-                    <div class="flex justify-end">
-                        <button type="submit" class="bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-mono font-bold uppercase py-3 px-8 rounded-xl">PROVISION_KEY</button>
-                    </div>
-                </form>
-            </section>
-
-            <section class="bg-[#09090c] border border-zinc-800 rounded-3xl p-6 overflow-hidden">
-                <h2 class="text-sm font-mono uppercase tracking-widest text-pink-400 mb-6 flex items-center gap-2">
-                    <span class="w-1.5 h-1.5 rounded-full bg-pink-500"></span> Key Registry Matrix
-                </h2>
-                <div class="overflow-x-auto w-full">
-                    <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="border-b border-zinc-800 text-[10px] font-mono text-zinc-500 uppercase tracking-wider">
-                                <th class="p-4">Owner Identity</th>
-                                <th class="p-4">Authorization Token Key</th>
-                                <th class="p-4">Dynamic Expiry Status Counter</th>
-                                <th class="p-4">Usage Velocity</th>
-                                <th class="p-4">Status</th>
-                                <th class="p-4">Route Scope Privileges</th>
-                                <th class="p-4 text-right">Interventions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {"".join(key_rows)}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            <section class="bg-[#09090c] border border-zinc-800 rounded-3xl p-6">
-                <h2 class="text-sm font-mono uppercase tracking-widest text-amber-400 mb-6 flex items-center gap-2">
-                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Intercepted Request Logs Pipeline
-                </h2>
-                <div class="overflow-x-auto w-full max-h-96">
-                    <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="border-b border-zinc-800 text-[10px] font-mono text-zinc-500 uppercase tracking-wider">
-                                <th class="p-3">Time Intercepted</th>
-                                <th class="p-3">Executing Key Token ID</th>
-                                <th class="p-3">Endpoint Route Call</th>
-                                <th class="p-3">Query Data Parameters Passed</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {logs_table_body}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-        </div>
-
-        <div id="endpoints_modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div class="bg-[#09090c] border border-zinc-800 w-full max-w-3xl rounded-3xl p-6 max-h-[85vh] flex flex-col">
-                <div class="flex justify-between items-center mb-6">
-                    <h3 class="text-sm font-mono uppercase text-purple-400">Available Gateway Pipelines</h3>
-                    <button onclick="dismissEndpointsModal()" class="text-zinc-500 hover:text-white font-mono text-xs border border-zinc-800 px-3 py-1 rounded-xl">&times; CLOSE</button>
-                </div>
-                <div class="overflow-y-auto space-y-2 flex-1 p-1 bg-[#040406] rounded-2xl" id="endpoints_render_view"></div>
-            </div>
-        </div>
-
-        <div id="edit_modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div class="bg-[#09090c] border border-zinc-800 w-full max-w-xl rounded-3xl p-6 relative">
-                <h3 class="text-sm font-mono uppercase text-purple-400 mb-6">Modify Gateway Authorization Profiles</h3>
-                <form action="/admin/edit" method="POST" class="space-y-4">
-                    <input type="hidden" name="key" id="edit_key_id">
-                    <div>
-                        <label class="block text-[10px] font-mono uppercase text-zinc-500 mb-1">Update Owner Identity Name</label>
-                        <input type="text" name="name" id="edit_name" required class="w-full bg-[#111116] border border-zinc-800 rounded-xl px-4 py-2 text-xs text-zinc-200 font-mono">
-                    </div>
-                    <div>
-                        <label class="block text-[10px] font-mono uppercase text-zinc-500 mb-1">Recalibrate Transmit Volume Limit</label>
-                        <input type="number" name="limit" id="edit_limit" required class="w-full bg-[#111116] border border-zinc-800 rounded-xl px-4 py-2 text-xs text-zinc-200 font-mono">
-                    </div>
-                    <div>
-                        <label class="block text-[10px] font-mono uppercase text-zinc-500 mb-2">Adjust Route Clearances</label>
-                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-40 overflow-y-auto p-2 bg-[#111116] border border-zinc-800 rounded-xl">
-                            {"".join([f'<div><label class="flex items-center space-x-2 text-xs font-mono text-zinc-500 cursor-pointer"><input type="checkbox" name="tools" value="{t}" id="modal_tool_{t}" class="rounded border-zinc-800 bg-zinc-900 text-purple-600"> <span class="uppercase">{t}</span></label></div>' for t in AVAILABLE_TOOLS])}
-                        </div>
-                    </div>
-                    <div class="flex justify-end space-x-2 pt-4">
-                        <button type="button" onclick="closeEditModal()" class="border border-zinc-800 px-4 py-2 rounded-xl text-xs font-mono text-zinc-500">Cancel</button>
-                        <button type="submit" class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-xl text-xs font-mono font-bold uppercase">Save Changes</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <script>
-            function adjustExpiryConstraintState(checkbox) {{
-                const container = document.getElementById('expiry_date_container');
-                const input = document.getElementById('expiry_input');
-                if (checkbox.checked) {{
-                    container.style.opacity = '0.25';
-                    input.disabled = true;
-                    input.required = false;
-                    input.value = '';
-                }} else {{
-                    container.style.opacity = '1';
-                    input.disabled = false;
-                    input.required = true;
-                }}
-            }}
-            
-            function bulkToggleExecutionModules() {{
-                const checkboxes = document.querySelectorAll('#tools_checkbox_grid input[type="checkbox"]');
-                const currentStatus = Array.from(checkboxes).every(cb => cb.checked);
-                checkboxes.forEach(cb => cb.checked = !currentStatus);
-            }}
-
-            function triggerEditModal(key, name, limit, tools) {{
-                document.getElementById('edit_key_id').value = key;
-                document.getElementById('edit_name').value = name;
-                document.getElementById('edit_limit').value = limit;
-                
-                const toolArray = tools.split(',');
-                document.querySelectorAll('#edit_modal input[type="checkbox"]').forEach(cb => cb.checked = false);
-                toolArray.forEach(t => {{
-                    const checkbox = document.getElementById('modal_tool_' + t);
-                    if(checkbox) checkbox.checked = true;
-                }});
-                
-                document.getElementById('edit_modal').classList.remove('hidden');
-            }}
-
-            function closeEditModal() {{
-                document.getElementById('edit_modal').classList.add('hidden');
-            }}
-
-            function revealEndpointsModal() {{
-                const runtimeOrigin = window.location.origin;
-                const viewContainer = document.getElementById('endpoints_render_view');
-                viewContainer.innerHTML = '';
-                
-                const systemTools = {AVAILABLE_TOOLS};
-                systemTools.forEach(tool => {{
-                    const absoluteUri = `${{runtimeOrigin}}/api/${{tool}}?key=`;
-                    viewContainer.innerHTML += `
-                        <div class="p-3 border border-zinc-800 bg-[#09090c] rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 font-mono text-xs">
-                            <span class="text-pink-500 font-extrabold uppercase px-2 py-0.5 bg-pink-500/10 rounded border border-pink-500/20 min-w-[100px] text-center">${{tool}}</span>
-                            <div class="flex items-center gap-2 w-full md:w-auto flex-1">
-                                <input type="text" readonly value="${{absoluteUri}}" class="bg-[#040406] border border-zinc-800 text-zinc-400 px-3 py-1.5 rounded-lg text-[11px] w-full outline-none font-mono">
-                                <button onclick="navigator.clipboard.writeText('${{absoluteUri}}'); alert('Path Copied')" class="bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 rounded-lg text-zinc-300 font-sans text-xs shrink-0">Copy</button>
-                            </div>
-                        </div>
-                    `;
-                }});
-                document.getElementById('endpoints_modal').classList.remove('hidden');
-            }}
-
-            function dismissEndpointsModal() {{
-                document.getElementById('endpoints_modal').classList.add('hidden');
-            }}
-
-            function initializeTelemetryCountdownEngine() {{
-                const containers = document.querySelectorAll('.countdown-container');
-                
-                setInterval(() => {{
-                    containers.forEach(element => {{
-                        const rawExpiry = element.getAttribute('data-expiry');
-                        if (!rawExpiry || rawExpiry === 'Lifetime') {{
-                            element.innerHTML = '<span class="text-fuchsia-400 font-bold uppercase tracking-widest text-[11px]">LIFETIME ACCESS</span>';
-                            return;
-                        }}
-                        
-                        const targetEpoch = new Date(rawExpiry).getTime();
-                        const currentEpoch = new Date().getTime();
-                        const remains = targetEpoch - currentEpoch;
-                        
-                        if (remains <= 0) {{
-                            element.innerHTML = '<span class="text-red-500 font-black tracking-widest text-[11px] uppercase">EXPIRED</span>';
-                            return;
-                        }}
-                        
-                        const hours = Math.floor(remains / (1000 * 60 * 60));
-                        const minutes = Math.floor((remains % (1000 * 60 * 60)) / (1000 * 60));
-                        const seconds = Math.floor((remains % (1000 * 60)) / 1000);
-                        
-                        element.innerHTML = `<span class="text-zinc-400 font-medium">${{hours}}H ${{minutes}}M ${{seconds}}S</span>`;
-                    }});
-                }}, 1000);
-            }}
-            
-            window.addEventListener('DOMContentLoaded', initializeTelemetryCountdownEngine);
-        </script>
-    </body>
-    </html>
-    """
-
-# --- KEY MANAGEMENT MUTATION ENGINES ---
-@app.post("/admin/create")
-async def process_key_generation(
-    name: str = Form(...),
-    custom_key: Optional[str] = Form(None),
-    limit: int = Form(...),
-    lifetime: Optional[str] = Form(None),
-    expiry: Optional[str] = Form(None),
-    tools: List[str] = Form(default=[]),
-    session: Optional[str] = Cookie(None)
-):
-    if not is_authenticated(session):
-        raise HTTPException(status_code=401)
-        
-    generated_token = custom_key.strip() if custom_key and custom_key.strip() else f"VX-{uuid.uuid4().hex.upper()[:12]}"
-    expiration_strategy = "Lifetime" if lifetime == "true" else (expiry if expiry else "Lifetime")
-    scope_clearances = tools if tools else ["all"]
-
-    API_KEYS_DB[generated_token] = {
-        "name": name,
+    API_KEYS_DB[key_token] = {
+        "owner": owner,
+        "token": key_token,
+        "expiry": parsed_date,
         "limit": limit,
         "used": 0,
-        "expiry": expiration_strategy,
-        "tools": scope_clearances,
-        "status": "Active"
+        "status": "Active",
+        "scopes": assigned_scopes
     }
-    return RedirectResponse(url="/admin", status_code=303)
+    return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
-@app.post("/admin/edit")
-async def process_key_modification(
-    key: str = Form(...),
-    name: str = Form(...),
-    limit: int = Form(...),
-    tools: List[str] = Form(default=[]),
-    session: Optional[str] = Cookie(None)
-):
-    if not is_authenticated(session):
-        raise HTTPException(status_code=401)
-        
-    if key in API_KEYS_DB:
-        API_KEYS_DB[key]["name"] = name
-        API_KEYS_DB[key]["limit"] = limit
-        API_KEYS_DB[key]["tools"] = tools if tools else ["all"]
-        
-    return RedirectResponse(url="/admin", status_code=303)
+@app.get("/keys/delete/{token}")
+def delete_key(token: str, auth: bool = Depends(check_session)):
+    if token in API_KEYS_DB:
+        del API_KEYS_DB[token]
+    return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
-@app.get("/admin/reset/{key}")
-async def clear_usage_counters(key: str, session: Optional[str] = Cookie(None)):
-    if not is_authenticated(session):
-        raise HTTPException(status_code=401)
-    if key in API_KEYS_DB:
-        API_KEYS_DB[key]["used"] = 0
-    return RedirectResponse(url="/admin", status_code=303)
 
-@app.get("/admin/toggle/{key}")
-async def process_suspension_toggle(key: str, session: Optional[str] = Cookie(None)):
-    if not is_authenticated(session):
-        raise HTTPException(status_code=401)
-    if key in API_KEYS_DB:
-        current_state = API_KEYS_DB[key]["status"]
-        API_KEYS_DB[key]["status"] = "Suspended" if current_state == "Active" else "Active"
-    return RedirectResponse(url="/admin", status_code=303)
+# --- CORE API PROXY INTEGRATION LAYER ---
+@app.get("/api/{route}")
+def proxy_gateway(route: str, request: Request, key: str):
+    # 1. Validate Custom Key Existence
+    if key not in API_KEYS_DB:
+        return JSONResponse(status_code=403, content={"error": "Access Revoked: Invalid Token Identification Matrix"})
+    
+    key_profile = API_KEYS_DB[key]
+    current_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    query_params = dict(request.query_params)
+    
+    # Clean proxy verification parameter out of forwarding logs
+    if "key" in query_params:
+        del query_params["key"]
+    
+    # 2. Append Intercept logs
+    PIPELINE_LOGS.append({
+        "time": current_time_str,
+        "token": key,
+        "route": route.upper(),
+        "params": str(query_params)
+    })
 
-@app.get("/admin/delete/{key}")
-async def execute_key_destruction(key: str, session: Optional[str] = Cookie(None)):
-    if not is_authenticated(session):
-        raise HTTPException(status_code=401)
-    if key in API_KEYS_DB:
-        del API_KEYS_DB[key]
-    return RedirectResponse(url="/admin", status_code=303)
+    # 3. Check Route Privilege Scopes
+    if "ALL" not in key_profile["scopes"] and route.upper() not in key_profile["scopes"]:
+        return JSONResponse(status_code=403, content={"error": f"Unauthorized Access Scope Framework for Sub-Tool: {route.upper()}"})
+
+    # 4. Check Rate/Limit Velocity Expirations
+    if key_profile["expiry"] != "LIFETIME ACCESS":
+        today_date = datetime.now().strftime("%Y-%m-%d")
+        if today_date > key_profile["expiry"]:
+            return JSONResponse(status_code=403, content={"error": "Token lifecycle execution window has expired."})
+            
+    if key_profile["used"] >= key_profile["limit"]:
+        return JSONResponse(status_code=429, content={"error": "Transaction call allocation volume limits fully exhausted."})
+
+    # Increment metric tracking counter
+    key_profile["used"] += 1
+
+    # 5. Forward Execution Pipeline to Target API Host
+    upstream_params = dict(request.query_params)
+    upstream_params["key"] = MASTER_KEY # Seamless transparent payload swapping
+    
+    try:
+        target_url = f"{TARGET_BASE_API}/{route}"
+        upstream_response = requests.get(target_url, params=upstream_params, timeout=12)
+        return JSONResponse(status_code=upstream_response.status_code, content=upstream_response.json())
+    except requests.exceptions.RequestException as exc:
+        return JSONResponse(status_code=502, content={"error": "Upstream communication gateway failure", "details": str(exc)})
+
 
 
