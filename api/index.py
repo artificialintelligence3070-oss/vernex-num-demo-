@@ -1,464 +1,667 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+import os
+import time
+import json
 import requests
 from datetime import datetime
-import secrets
+from typing import List, Optional
+from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.security import APIKeyCookie
 
-app = Flask(__name__)
-CORS(app)
+app = FastAPI(title="SHAYAN_EXPLORER HUB API")
 
-# Upstream Core Server Coordinates
-UPSTREAM_BASE_URL = "https://ft-osint-api.duckdns.org/api"
-MASTER_KEY = "explorer16"
+# --- CONFIGURATION & SECURITY ---
+TARGET_BASE_API = "https://ft-osint-api.duckdns.org/api"
+MASTER_KEY = "shayan-exploindia"
+ADMIN_USER = "vernex"
+ADMIN_PASS = "vernex@16vx"
 
-# In-Memory Database Architecture (Saves states within current execution cycles)
-API_KEYS_DB = {
+cookie_sec = APIKeyCookie(name="session_token", auto_error=False)
+
+# ─── 🔒 PERMANENT HARDCODED KEYS MATRIX ────────────────────────────────────────
+PERMANENT_STATIC_KEYS = {
     "vx-osint": {
-        "owner": "Master Deployment",
-        "key": "vx-osint",
-        "daily_limit": 5000,
-        "used_count": 0,
-        "is_lifetime": True,
-        "expiry_date": "",
+        "owner": "Master Deployment Default",
+        "token": "vx-osint",
+        "expiry": "LIFETIME ACCESS",
+        "limit": 999999,
+        "used": 0,
         "status": "Active",
         "scopes": ["ALL"]
     }
 }
-PIPELINE_LOGS = []
 
-# Raw HTML Dashboard Asset Injection (Protects string literals from Jinja parsing errors)
-HTML_DASHBOARD = '''<!DOCTYPE html>
-<html lang="en">
+# --- APPS LIVE SYSTEM MEMORY MATRIX ---
+API_KEYS_DB = {}
+API_KEYS_DB.update(PERMANENT_STATIC_KEYS)
+PIPELINE_LOGS = []
+SESSION_LOGS = []  # Tracks authentication timelines dynamically
+ROUTE_USAGE_COUNTER = {}  # Tracks metrics calculation engine for terminal bars
+
+AVAILABLE_TOOLS = [
+    "ADV", "PAYTM", "IMEI", "CALLTRACER", "UPI", "IFSC", "NUMBER", "PINCODE",
+    "IP", "CHALLAN", "FF", "BGMI", "SNAP", "EMAIL", "VEHICLE", "GIT", "INSTA", 
+    "TG", "TGIDINFO", "NUMLEAK", "PK", "NAME", "AADHAR", "NUMTOUPI", "PAN", 
+    "VEH2NUM", "ADHARFAMILY", "BOMBER"
+]
+
+# Initialize metrics engine counters
+for tool in AVAILABLE_TOOLS:
+    ROUTE_USAGE_COUNTER[tool] = 0
+
+def white_label_filter(raw_content: str) -> str:
+    replacements = {
+        "@ftgamer2": "@vernexzzz", "ftgamer2": "@vernexzzz", "ftgamer": "@vernexzzz",
+        "https://t.me/lynx_api": "https://t.me/shayan_explorer_channel",
+        "@bronex_ultra": "@vernexzzz", "@@bronex_ultra": "@vernexzzz",
+        "@bornex_ultra": "@vernexzzz", "@@bornex_ultra": "@vernexzzz"
+    }
+    sanitized = raw_content
+    for target, replacement in replacements.items():
+        sanitized = sanitized.replace(target, replacement)
+    return sanitized
+
+# --- UI TEMPLATES ---
+LOGIN_HTML = """
+<!DOCTYPE html>
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SHAYAN_EXPLORER HUB</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>SHAYAN_EXPLORER HUB - Login</title>
     <style>
-        body {
-            background-color: #0b0a0f;
-            color: #e2e1e9;
-            font-family: 'Courier New', Courier, monospace;
-        }
-        .glow-border {
-            border: 1px solid #2d1b4e;
-            box-shadow: 0 0 10px rgba(147, 51, 234, 0.1);
-        }
-        .accent-purple { color: #bf5af2; }
-        .bg-purple-accent { background-color: #9d4edd; }
-        .bg-purple-accent:hover { background-color: #7b2cbf; }
+        body { background-color: #000000; color: #ff3333; font-family: 'Courier New', monospace; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; overflow: hidden; }
+        .login-card { background: #070101; border: 2px solid #ff0033; padding: 40px; border-radius: 4px; box-shadow: 0 0 20px #ff0033; width: 330px; animation: glowPulse 2.5s infinite alternate; }
+        h2 { color: #ff0033; text-align: center; font-size: 1.3rem; margin-bottom: 30px; letter-spacing: 3px; text-shadow: 0 0 10px #ff0033; }
+        .input-group { margin-bottom: 25px; }
+        label { display: block; font-size: 0.75rem; color: #aa2222; margin-bottom: 6px; letter-spacing: 1px; }
+        input { width: 100%; padding: 11px; background: #000000; border: 1px solid #550011; color: #ff6666; border-radius: 2px; box-sizing: border-box; font-family: monospace; }
+        input:focus { border-color: #ff0033; outline: none; box-shadow: 0 0 8px #ff0033; }
+        button { width: 100%; padding: 12px; background: #ff0033; border: none; color: black; font-weight: bold; cursor: pointer; border-radius: 2px; letter-spacing: 1px; transition: 0.3s; }
+        button:hover { background: #ff3366; box-shadow: 0 0 15px #ff3366; color: white; }
+        .error { color: #ff0000; font-size: 0.75rem; text-align: center; margin-bottom: 15px; text-shadow: 0 0 5px #ff0000; }
+        @keyframes glowPulse { 0% { box-shadow: 0 0 15px rgba(255,0,51,0.4); } 100% { box-shadow: 0 0 25px rgba(255,0,51,0.8); } }
     </style>
 </head>
-<body class="p-4 md:p-8">
+<body>
+    <div class="login-card">
+        <h2>MAIN_FRAMEWORK // LOG</h2>
+        {% if error %}<div class="error">{{ error }}</div>{% endif %}
+        <form method="POST" action="/login">
+            <div class="input-group">
+                <label>IDENTITY OPERATOR</label>
+                <input type="text" name="username" required autocomplete="off">
+            </div>
+            <div class="input-group">
+                <label>ENCRYPTED ACCESS STRING</label>
+                <input type="password" name="password" required>
+            </div>
+            <button type="submit">BOOT_UP SYSTEM</button>
+        </form>
+    </div>
+</body>
+</html>
+"""
 
-    <!-- ADMINISTRATIVE ACCESS PANEL -->
-    <div id="login-screen" class="max-w-md mx-auto my-20 p-6 bg-[#12111a] rounded-lg glow-border">
-        <h2 class="text-xl font-bold tracking-widest text-center mb-6 accent-purple">SHAYAN_EXPLORER HUB</h2>
-        <div class="mb-4">
-            <label class="block text-xs uppercase mb-1 text-gray-400">System Operator Identity</label>
-            <input type="text" id="username" class="w-full bg-[#1b1926] border border-[#2d1b4e] p-2 rounded text-sm focus:outline-none focus:border-purple-500 text-white" value="vernex">
+DASHBOARD_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SHAYAN_EXPLORER HUB</title>
+    <style>
+        body { background-color: #020203; color: #ff4d4d; font-family: 'Courier New', monospace; margin: 0; padding: 20px; }
+        .navbar { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #ff0033; padding-bottom: 15px; margin-bottom: 30px; box-shadow: 0 4px 15px rgba(255,0,51,0.1); }
+        .brand { color: #ff0033; font-weight: bold; font-size: 1.3rem; letter-spacing: 2px; text-shadow: 0 0 10px #ff0033; animation: blinker 3s infinite; }
+        
+        /* 3-Dots Dropdown Framework Matrix */
+        .dots-menu-container { position: relative; display: inline-block; }
+        .three-dots-btn { background: none; border: 1px solid #550011; color: #ff0033; font-size: 1.5rem; cursor: pointer; padding: 2px 14px; border-radius: 4px; transition: 0.3s; }
+        .three-dots-btn:hover { background: #ff0033; color: #000; box-shadow: 0 0 10px #ff0033; }
+        .dropdown-menu-content { display: none; position: absolute; right: 0; top: 35px; background: #070101; border: 2px solid #ff0033; min-width: 240px; box-shadow: 0 0 20px rgba(255,0,51,0.5); z-index: 500; border-radius: 4px; padding: 10px 0; }
+        .dropdown-menu-content a, .dropdown-menu-content button { display: block; width: 100%; text-align: left; background: none; border: none; padding: 12px 20px; color: #ff4d4d; font-family: monospace; font-size: 0.8rem; text-decoration: none; box-sizing: border-box; cursor: pointer; }
+        .dropdown-menu-content a:hover, .dropdown-menu-content button:hover { background: rgba(255,0,51,0.15); color: #fff; text-shadow: 0 0 5px #ff0033; }
+        .menu-user-tag { padding: 8px 20px; font-size: 0.7rem; color: #881111; border-bottom: 1px solid #33000a; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
+
+        .section-title { color: #ff0033; font-size: 0.95rem; margin-top: 40px; margin-bottom: 18px; letter-spacing: 1.5px; text-transform: uppercase; text-shadow: 0 0 8px rgba(255,0,51,0.4); }
+        .card { background: #060101; border: 1px solid #33000a; padding: 25px; border-radius: 4px; margin-bottom: 25px; box-shadow: inset 0 0 10px rgba(255,0,51,0.05); }
+        .grid-2 { display: grid; grid-template-columns: 1fr; gap: 20px; margin-bottom: 20px; }
+        @media(min-width: 768px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
+        .input-box { display: flex; flex-direction: column; }
+        .input-box label { font-size: 0.75rem; color: #aa2222; margin-bottom: 6px; letter-spacing: 1px; }
+        .input-box input, .input-box select { background: #000000; border: 1px solid #550011; padding: 11px; color: #ff6666; border-radius: 2px; font-family: monospace; }
+        .input-box input:focus { border-color: #ff0033; outline: none; box-shadow: 0 0 5px #ff0033; }
+        
+        .tools-header { display: flex; justify-content: space-between; font-size: 0.75rem; margin-top: 25px; margin-bottom: 12px; color: #aa2222; }
+        .tools-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+        .tool-check { background: #000; border: 1px solid #220005; padding: 9px; border-radius: 2px; display: flex; align-items: center; font-size: 0.75rem; cursor: pointer; color: #cc3333; transition: 0.2s; }
+        .tool-check:hover { border-color: #ff0033; background: #0d0103; }
+        .tool-check input { margin-right: 10px; accent-color: #ff0033; }
+        
+        .btn-container { display: flex; justify-content: flex-end; margin-top: 25px; }
+        .submit-btn { background: #ff0033; border: none; color: #000; padding: 12px 28px; font-weight: bold; border-radius: 2px; cursor: pointer; font-size: 0.8rem; font-family: monospace; transition: 0.3s; }
+        .submit-btn:hover { background: #ff3366; box-shadow: 0 0 15px #ff0033; color: #fff; }
+        
+        /* Fixed Unified Row Styling Matrix */
+        table { width: 100%; border-collapse: collapse; font-size: 0.75rem; text-align: left; }
+        th { color: #aa2222; font-weight: normal; padding-bottom: 12px; border-bottom: 1px solid #33000a; letter-spacing: 1px; }
+        td { padding: 14px 8px; border-bottom: 1px solid #140204; vertical-align: middle; }
+        .badge-active { color: #00ff66; font-weight: bold; text-shadow: 0 0 5px rgba(0,255,102,0.4); }
+        .badge-suspended { color: #ff0033; font-weight: bold; text-shadow: 0 0 5px rgba(255,0,51,0.4); }
+        .badge-scope { background: #1c0205; padding: 2px 6px; border-radius: 2px; color: #ff6666; border: 1px solid #44000a; display: inline-block; margin: 2px; }
+        
+        /* Beautiful Single Line Button Action Framework */
+        .actions-wrapper { display: flex; flex-direction: row; flex-wrap: nowrap; gap: 4px; justify-content: flex-start; align-items: center; width: max-content; }
+        .btn-action { padding: 5px 10px; border-radius: 2px; font-size: 0.7rem; font-weight: bold; text-decoration: none; cursor: pointer; border: 1px solid transparent; font-family: monospace; display: inline-block; text-align: center; white-space: nowrap; transition: 0.2s; }
+        .btn-edit { background: #000000; border-color: #ffcc00; color: #ffcc00; }
+        .btn-edit:hover { background: #ffcc00; color: #000; box-shadow: 0 0 8px #ffcc00; }
+        .btn-reset { background: #000000; border-color: #00ccff; color: #00ccff; }
+        .btn-reset:hover { background: #00ccff; color: #000; box-shadow: 0 0 8px #00ccff; }
+        .btn-toggle { background: #000000; border-color: #00ff66; color: #00ff66; }
+        .btn-toggle:hover { background: #00ff66; color: #000; box-shadow: 0 0 8px #00ff66; }
+        .btn-toggle.suspended { border-color: #ff0055; color: #ff0055; }
+        .btn-toggle.suspended:hover { background: #ff0055; color: #fff; box-shadow: 0 0 8px #ff0055; }
+        .btn-del { background: #ff0033; color: #000; border-color: #ff0033; }
+        .btn-del:hover { background: #ff3366; color: #fff; box-shadow: 0 0 8px #ff3366; }
+
+        /* Hacker Calculator / Analytics Matrix System Design */
+        .analytics-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px; margin-bottom: 25px; }
+        .analyzer-card { background: #040001; border: 1px solid #44000a; border-radius: 2px; padding: 15px; position: relative; overflow: hidden; }
+        .analyzer-title { font-size: 0.7rem; color: #aa2222; margin-bottom: 8px; letter-spacing: 1px; }
+        .analyzer-value { font-size: 1.4rem; color: #ff3333; font-weight: bold; text-shadow: 0 0 8px rgba(255,0,51,0.3); }
+        .metric-bar-bg { width: 100%; height: 5px; background: #1a0004; border-radius: 2px; margin-top: 10px; position: relative; }
+        .metric-bar-fill { height: 100%; background: #ff0033; width: 0%; box-shadow: 0 0 8px #ff0033; transition: width 1s ease-in-out; }
+
+        /* Modal Structure Setup */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: #070101; border: 2px solid #ff0033; border-radius: 4px; padding: 30px; width: 90%; max-width: 600px; max-height: 85vh; overflow-y: auto; box-shadow: 0 0 25px #ff0033; }
+        .modal-title { color: #ff0033; font-size: 1.1rem; margin-bottom: 20px; text-shadow: 0 0 5px #ff0033; }
+        .close-modal { float: right; color: #aa2222; cursor: pointer; font-size: 1.4rem; }
+        .close-modal:hover { color: #ff0033; }
+
+        @keyframes blinker { 0%, 100% { opacity: 1; } 50% { opacity: 0.85; } }
+    </style>
+</head>
+<body>
+
+    <div class="navbar">
+        <div class="brand">⚡ SHAYAN_EXPLORER // SYSTEM CORE</div>
+        <div class="dots-menu-container">
+            <button class="three-dots-btn" onclick="toggleDropdownMenu()">⋮</button>
+            <div class="dropdown-menu-content" id="mainDropdownMenu">
+                <div class="menu-user-tag">⚡ OPERATOR: {{ current_admin }}</div>
+                <a href="/dashboard">🏠 OVERVIEW CONSOLE</a>
+                <button onclick="openApisModal()">🌐 ACCESS GATEWAY URLS</button>
+                <a href="/logout" style="color: #ff0033; border-top: 1px solid #220005;">❌ SHUTDOWN SESSION</a>
+            </div>
         </div>
-        <div class="mb-6">
-            <label class="block text-xs uppercase mb-1 text-gray-400">Security Credentials</label>
-            <input type="password" id="password" class="w-full bg-[#1b1926] border border-[#2d1b4e] p-2 rounded text-sm focus:outline-none focus:border-purple-500 text-white" value="vernex@16vx">
-        </div>
-        <button onclick="handleLogin()" class="w-full bg-purple-accent text-white text-xs py-3 font-bold tracking-widest rounded transition-all">ESTABLISH CONNECTION</button>
-        <p id="login-err" class="text-red-500 text-xs mt-3 text-center hidden">Access credentials invalid.</p>
     </div>
 
-    <!-- MAIN INTERACTIVE OPERATIONS HUB -->
-    <div id="dashboard-screen" class="max-w-6xl mx-auto hidden">
-        
-        <header class="flex justify-between items-center mb-8 border-b border-[#2d1b4e] pb-4">
-            <div>
-                <h1 class="text-xl font-bold tracking-widest text-white uppercase">SHAYAN_EXPLORER HUB</h1>
-                <p class="text-[10px] text-gray-500">SYSTEM ARCHITECTURE: DEV SHAYAN_EXPLORER // SYSTEM ACTIVE</p>
+    <div class="section-title">📊 METRIC ANALYSIS DEVIATION GRAPH</div>
+    <div class="analytics-grid">
+        {% for m_title, m_count, m_pct in telemetry_metrics %}
+        <div class="analyzer-card">
+            <div class="analyzer-title">ROUTE INTERCEPT: {{ m_title }}</div>
+            <div class="analyzer-value">{{ m_count }} <span style="font-size: 0.75rem; color:#550011;">CALLS</span></div>
+            <div class="metric-bar-bg">
+                <div class="metric-bar-fill" style="width: {{ m_pct }}%;"></div>
             </div>
-            <div class="flex items-center gap-4">
-                <span class="text-xs border border-[#2d1b4e] px-3 py-1 rounded text-gray-400 uppercase tracking-wider text-[10px]">VIEW_SYSTEM_APIS</span>
-                <button onclick="handleLogout()" class="text-xs text-red-400 hover:underline text-[10px] uppercase">LOGOUT</button>
-            </div>
-        </header>
+        </div>
+        {% endfor %}
+    </div>
 
-        <!-- OPERATIONS PANEL 01: KEY STRATEGY CONFIGURATOR -->
-        <section class="bg-[#12111a] p-6 rounded-lg glow-border mb-8">
-            <h2 class="text-xs font-bold tracking-widest accent-purple uppercase mb-4 flex items-center gap-2">
-                <span>●</span> PROPOSE SYSTEM COMMUNICATIONS KEY
-            </h2>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div>
-                    <label class="block text-[10px] uppercase text-gray-400 mb-1">Target Owner Name</label>
-                    <input type="text" id="new-owner" placeholder="e.g. Client Profile" class="w-full bg-[#1b1926] border border-[#2d1b4e] p-2 rounded text-xs text-white">
+    <div class="section-title">• PROPOSE SYSTEM COMMUNICATIONS KEY</div>
+    <div class="card">
+        <form method="POST" action="/keys/generate">
+            <div class="grid-2">
+                <div class="input-box">
+                    <label>TARGET OWNER IDENTITY NAME</label>
+                    <input type="text" name="owner" placeholder="e.g. Premium Client" required autocomplete="off">
                 </div>
-                <div>
-                    <label class="block text-[10px] uppercase text-gray-400 mb-1">Custom Assignment String</label>
-                    <input type="text" id="new-token" placeholder="Random token if empty" class="w-full bg-[#1b1926] border border-[#2d1b4e] p-2 rounded text-xs text-white">
+                <div class="input-box">
+                    <label>CUSTOM ASSIGNMENT STRING (TOKEN KEY)</label>
+                    <input type="text" name="token" placeholder="Auto-generate tracking hash if empty" autocomplete="off">
                 </div>
-                <div>
-                    <label class="block text-[10px] uppercase text-gray-400 mb-1">Daily Call Limit Volume</label>
-                    <input type="number" id="new-limit" value="2500" class="w-full bg-[#1b1926] border border-[#2d1b4e] p-2 rounded text-xs text-white">
+            </div>
+            <div class="grid-2">
+                <div class="input-box">
+                    <label>DAILY VELOCITY CALL LIMIT VOLUME</label>
+                    <input type="number" name="limit" value="2500" required>
                 </div>
-                <div>
-                    <label class="block text-[10px] uppercase text-gray-400 mb-1">Life Strategy</label>
-                    <label class="flex items-center gap-2 mt-3 cursor-pointer text-xs text-gray-300">
-                        <input type="checkbox" id="new-lifetime" onchange="toggleDateDisable(this)" class="accent-purple"> 
-                        LIFETIME ACCESS TIER
+                <div class="input-box">
+                    <label>TARGET EXPIRATION LIFECYCLE</label>
+                    <input type="text" name="expiry_date" placeholder="Type 'LIFETIME ACCESS' or YYYY-MM-DD" value="LIFETIME ACCESS">
+                </div>
+            </div>
+            <div class="tools-header">
+                <div>ROUTE AUTHORIZATION PRIVILEGES MATRIX SCOPE</div>
+                <div style="color: #ff0033; cursor:pointer;" onclick="toggleAllTools('create-form')">[ SELECT ALL TOOLS ]</div>
+            </div>
+            <div class="tools-grid" id="create-form">
+                {% for tool in tools %}
+                <label class="tool-check">
+                    <input type="checkbox" name="scopes" value="{{ tool }}" class="tool-checkbox"> {{ tool }}
+                </label>
+                {% endfor %}
+            </div>
+            <div class="btn-container">
+                <button type="submit" class="submit-btn">PROVISION_KEY_GATEWAY</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="section-title">• KEY REGISTRY MATRIX OVERVIEW</div>
+    <div class="card" style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>OWNER IDENTITY</th>
+                    <th>AUTHORIZATION TOKEN KEY</th>
+                    <th>EXPIRY TIMELINE</th>
+                    <th>USAGE VELOCITY</th>
+                    <th>STATUS</th>
+                    <th>ROUTE SCOPE PRIVILEGES</th>
+                    <th>SYSTEM CONFIGURATION INTERVENTIONS</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                {{ row }}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section-title">• OPERATOR SECURITY ACCESS TIMELOGS</div>
+    <div class="card" style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>AUTHENTICATION TIMESTAMP</th>
+                    <th>IDENTIFIED USER</th>
+                    <th>SYSTEM EVENT TRACE</th>
+                    <th>SECURITY CLEARANCE LAYER</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s_log in session_logs_html %}
+                {{ s_log }}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section-title">• INTERCEPTED REQUEST STREAMS PIPELINE LOGS</div>
+    <div class="card" style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>TIME INTERCEPTED</th>
+                    <th>EXECUTING KEY TOKEN ID</th>
+                    <th>ENDPOINT ROUTE CALL</th>
+                    <th>QUERY DATA PARAMETERS PASSED</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                {{ log }}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeEditModal()">&times;</span>
+            <div class="modal-title">🔧 MODIFY MATRIX AUTHORIZATION parameters</div>
+            <form method="POST" action="/keys/edit">
+                <input type="hidden" name="old_token" id="edit_old_token">
+                <div class="grid-2">
+                    <div class="input-box">
+                        <label>OWNER IDENTITY</label>
+                        <input type="text" name="owner" id="edit_owner" required autocomplete="off">
+                    </div>
+                    <div class="input-box">
+                        <label>RE-ASSIGN KEY STRING</label>
+                        <input type="text" name="token" id="edit_token" required autocomplete="off">
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="input-box">
+                        <label>LIMIT VOLUME</label>
+                        <input type="number" name="limit" id="edit_limit" required>
+                    </div>
+                    <div class="input-box">
+                        <label>EXPIRATION LIFECYCLE</label>
+                        <input type="text" name="expiry_date" id="edit_expiry" required>
+                    </div>
+                </div>
+                <div class="tools-header">
+                    <div>ROUTE PRIVILEGES MATRIX SCOPES</div>
+                    <div style="color: #ff0033; cursor:pointer;" onclick="toggleAllTools('edit-form')">[ TOGGLE ALL SCOPES ]</div>
+                </div>
+                <div class="tools-grid" id="edit-form">
+                    {% for tool in tools_edit %}
+                    <label class="tool-check">
+                        <input type="checkbox" name="scopes" value="{{ tool }}" class="edit-tool-checkbox"> {{ tool }}
                     </label>
+                    {% endfor %}
                 </div>
-                <div class="md:col-span-2">
-                    <label class="block text-[10px] uppercase text-gray-400 mb-1">Target Expiration Lifecycle</label>
-                    <input type="datetime-local" id="new-expiry" class="w-full bg-[#1b1926] border border-[#2d1b4e] p-2 rounded text-xs text-gray-400">
+                <div class="btn-container">
+                    <button type="submit" class="submit-btn" style="background: #ffcc00; color:#000;">COMMIT PARAMS UPDATE</button>
                 </div>
-            </div>
-
-            <!-- PRIVILEGED TOOL PATH ASSIGNMENT MATRIX -->
-            <div class="mb-6">
-                <div class="flex justify-between items-center mb-2">
-                    <label class="block text-[10px] uppercase text-gray-400">Route Authorization Privileges Scope</label>
-                    <button onclick="selectAllScopes()" class="text-[10px] text-purple-400 hover:underline">Select All Available Sub-Tools</button>
-                </div>
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-[#1b1926] p-4 rounded border border-[#2d1b4e]" id="scopes-box">
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="ADV" class="scope-item accent-purple"> ADV</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="PAYTM" class="scope-item accent-purple"> PAYTM</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="IMEI" class="scope-item accent-purple"> IMEI</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="CALLTRACER" class="scope-item accent-purple"> CALLTRACER</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="UPI" class="scope-item accent-purple"> UPI</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="IFSC" class="scope-item accent-purple"> IFSC</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="PINCODE" class="scope-item accent-purple"> PINCODE</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="IP" class="scope-item accent-purple"> IP</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="CHALLAN" class="scope-item accent-purple"> CHALLAN</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="FF" class="scope-item accent-purple"> FF</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="BGMI" class="scope-item accent-purple"> BGMI</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="SNAP" class="scope-item accent-purple"> SNAP</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="NUMBER" class="scope-item accent-purple"> NUMBER</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="EMAIL" class="scope-item accent-purple"> EMAIL</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="VEHICLE" class="scope-item accent-purple"> VEHICLE</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="GIT" class="scope-item accent-purple"> GIT</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="INSTA" class="scope-item accent-purple"> INSTA</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="TG" class="scope-item accent-purple"> TG</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="TGIDINFO" class="scope-item accent-purple"> TGIDINFO</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="NUMLEAK" class="scope-item accent-purple"> NUMLEAK</label>
-                    <!-- Expanded API Pipeline Modules -->
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="PK" class="scope-item accent-purple"> PK</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="NAME" class="scope-item accent-purple"> NAME</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="AADHAR" class="scope-item accent-purple"> AADHAR</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="NUMTOUPI" class="scope-item accent-purple"> NUMTOUPI</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="PAN" class="scope-item accent-purple"> PAN</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="VEH2NUM" class="scope-item accent-purple"> VEH2NUM</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="ADHARFAMILY" class="scope-item accent-purple"> ADHARFAMILY</label>
-                    <label class="flex items-center gap-2 text-xs text-gray-300"><input type="checkbox" value="BOMBER" class="scope-item accent-purple"> BOMBER</label>
-                </div>
-            </div>
-
-            <div class="flex justify-end">
-                <button onclick="provisionKey()" class="bg-[#bf5af2] hover:bg-[#a846db] text-white text-[10px] font-bold tracking-widest px-6 py-2.5 rounded uppercase">PROVISION_KEY</button>
-            </div>
-        </section>
-
-        <!-- OPERATIONS PANEL 02: ACTIVE KEY TRACKING METRICS -->
-        <section class="bg-[#12111a] p-6 rounded-lg glow-border mb-8">
-            <h2 class="text-xs font-bold tracking-widest accent-purple uppercase mb-4 flex items-center gap-2">
-                <span>●</span> KEY REGISTRY MATRIX
-            </h2>
-            <div class="overflow-x-auto">
-                <table class="w-full text-left text-xs border-collapse">
-                    <thead>
-                        <tr class="border-b border-[#2d1b4e] text-gray-400 text-[10px] tracking-wider uppercase">
-                            <th class="pb-3 font-normal">Owner Identity</th>
-                            <th class="pb-3 font-normal">Authorization Token Key</th>
-                            <th class="pb-3 font-normal">Dynamic Expiry Status Counter</th>
-                            <th class="pb-3 font-normal">Usage Velocity</th>
-                            <th class="pb-3 font-normal">Status</th>
-                            <th class="pb-3 font-normal">Route Scope Privileges</th>
-                            <th class="pb-3 font-normal text-right">System Configuration Interventions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="matrix-tbody" class="text-gray-300 font-mono text-[11px]"></tbody>
-                </table>
-            </div>
-        </section>
-
-        <!-- OPERATIONS PANEL 03: TELEMETRY AND LOG DATA STREAMS -->
-        <section class="bg-[#12111a] p-6 rounded-lg glow-border">
-            <h2 class="text-xs font-bold tracking-widest text-amber-500 uppercase mb-4 flex items-center gap-2">
-                <span>●</span> INTERCEPTED REQUEST STREAMS PIPELINE LOGS
-            </h2>
-            <div class="overflow-x-auto">
-                <table class="w-full text-left text-xs border-collapse">
-                    <thead>
-                        <tr class="border-b border-[#2d1b4e] text-gray-400 text-[10px] tracking-wider uppercase">
-                            <th class="pb-3 font-normal">Time Intercepted</th>
-                            <th class="pb-3 font-normal">Executing Key Token ID</th>
-                            <th class="pb-3 font-normal">Endpoint Route Call</th>
-                            <th class="pb-3 font-normal">Query Data Parameters Passed</th>
-                        </tr>
-                    </thead>
-                    <tbody id="logs-tbody" class="text-gray-400 font-mono text-[11px]"></tbody>
-                </table>
-                <div id="no-logs" class="text-center text-gray-600 py-6 text-xs uppercase tracking-widest hidden">
-                    No active request stream metrics tracking currently.
-                </div>
-            </div>
-        </section>
+            </form>
+        </div>
     </div>
 
-    <!-- MAIN APP CONTROLLER CORE ENGINE -->
+    <div id="apisModal" class="modal">
+        <div class="modal-content" style="max-width: 750px; border-color:#ff0033; box-shadow: 0 0 20px #ff0033;">
+            <span class="close-modal" onclick="closeApisModal()">&times;</span>
+            <div class="modal-title">🌐 LIVE ROUTE TARGET STRINGS</div>
+            <div id="urls-list" style="max-height: 50vh; overflow-y:auto; font-family: monospace; background:#000; padding:15px; border-radius:2px; border:1px solid #33000a;">
+            </div>
+        </div>
+    </div>
+
     <script>
-        if (localStorage.getItem("admin_authenticated") === "true") { showDashboard(); }
-
-        function handleLogin() {
-            const u = document.getElementById("username").value;
-            const p = document.getElementById("password").value;
-            fetch('/api/admin/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: u, password: p })
-            })
-            .then(res => {
-                if (res.status === 200) {
-                    localStorage.setItem("admin_authenticated", "true");
-                    showDashboard();
-                } else {
-                    document.getElementById("login-err").classList.remove("hidden");
+        function toggleDropdownMenu() {
+            let menu = document.getElementById('mainDropdownMenu');
+            menu.style.display = (menu.style.display === 'block') ? 'none' : 'block';
+        }
+        window.onclick = function(event) {
+            if (!event.target.matches('.three-dots-btn')) {
+                let dropdowns = document.getElementsByClassName("dropdown-menu-content");
+                for (let i = 0; i < dropdowns.length; i++) {
+                    dropdowns[i].style.display = "none";
                 }
-            }).catch(() => document.getElementById("login-err").classList.remove("hidden"));
+            }
         }
-
-        function handleLogout() {
-            localStorage.removeItem("admin_authenticated");
-            window.location.reload();
+        function toggleAllTools(containerId) {
+            let checkboxes = document.querySelectorAll('#' + containerId + ' input[type=\"checkbox\"]');
+            let allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            checkboxes.forEach(cb => cb.checked = !allChecked);
         }
-
-        function showDashboard() {
-            document.getElementById("login-screen").classList.add("hidden");
-            document.getElementById("dashboard-screen").classList.remove("hidden");
-            refreshDataPipeline();
-            setInterval(refreshDataPipeline, 4000);
-        }
-
-        function toggleDateDisable(cb) { document.getElementById("new-expiry").disabled = cb.checked; }
-        
-        function selectAllScopes() { 
-            document.querySelectorAll('.scope-item').forEach(checkbox => checkbox.checked = true); 
-        }
-
-        function provisionKey() {
-            const owner = document.getElementById("new-owner").value || "Client Profile";
-            const custom_token = document.getElementById("new-token").value;
-            const daily_limit = document.getElementById("new-limit").value || 2500;
-            const is_lifetime = document.getElementById("new-lifetime").checked;
-            const expiry_date = document.getElementById("new-expiry").value;
-            let scopes = [];
-            document.querySelectorAll('.scope-item:checked').forEach(cb => scopes.push(cb.value));
-
-            fetch('/api/admin/keys', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ owner, custom_token, daily_limit, is_lifetime, expiry_date, scopes })
-            }).then(() => {
-                document.getElementById("new-owner").value = "";
-                document.getElementById("new-token").value = "";
-                document.getElementById("new-lifetime").checked = false;
-                document.getElementById("new-expiry").value = "";
-                document.getElementById("new-expiry").disabled = false;
-                document.querySelectorAll('.scope-item').forEach(cb => cb.checked = false);
-                refreshDataPipeline();
+        function openEditModal(oldToken, owner, limit, expiry, activeScopesJson) {
+            document.getElementById('edit_old_token').value = oldToken;
+            document.getElementById('edit_owner').value = owner;
+            document.getElementById('edit_token').value = oldToken;
+            document.getElementById('edit_limit').value = limit;
+            document.getElementById('edit_expiry').value = expiry;
+            
+            let activeScopes = JSON.parse(activeScopesJson);
+            let checkboxes = document.querySelectorAll('.edit-tool-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = activeScopes.includes('ALL') || activeScopes.includes(cb.value);
             });
+            document.getElementById('editModal').style.display = 'flex';
         }
-
-        function fireKeyAction(key, action) {
-            fetch('/api/admin/keys/action', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ key, action })
-            }).then(() => refreshDataPipeline());
-        }
-
-        function refreshDataPipeline() {
-            fetch('/api/admin/keys')
-            .then(res => res.json())
-            .then(data => {
-                const tbody = document.getElementById("matrix-tbody");
-                tbody.innerHTML = "";
-                data.forEach(item => {
-                    const statusColor = item.status === "Active" ? "text-emerald-400" : "text-rose-500";
-                    const expiryDisplay = item.is_lifetime ? "LIFETIME ACCESS" : (item.expiry_date ? item.expiry_date.replace("T", " ") : "NOT SET");
-                    const scopeDisplay = item.scopes.join(", ");
-                    tbody.innerHTML += `
-                        <tr class="border-b border-[#1b1926] hover:bg-[#161522]">
-                            <td class="py-3 text-white font-semibold">${item.owner}</td>
-                            <td class="py-3 text-fuchsia-400 font-mono">${item.key}</td>
-                            <td class="py-3 text-purple-300 font-bold text-[10px] uppercase">${expiryDisplay}</td>
-                            <td class="py-3 text-gray-400">${item.used_count} / <span class="text-gray-500">${item.daily_limit}</span></td>
-                            <td class="py-3 ${statusColor} font-bold text-[10px] uppercase">${item.status}</td>
-                            <td class="py-3 max-w-xs truncate text-gray-400 text-[10px]" title="${scopeDisplay}">${scopeDisplay}</td>
-                            <td class="py-3 text-right">
-                                <div class="inline-flex gap-1 text-[10px] font-bold">
-                                    <button onclick="fireKeyAction('${item.key}', 'RESET')" class="px-2 py-0.5 rounded bg-blue-600/20 text-blue-400 border border-blue-600/30 hover:bg-blue-600/40">RESET</button>
-                                    <button onclick="fireKeyAction('${item.key}', 'TOGGLE')" class="px-2 py-0.5 rounded bg-orange-600/20 text-orange-400 border border-orange-600/30 hover:bg-orange-600/40">TOGGLE</button>
-                                    <button onclick="fireKeyAction('${item.key}', 'DEL')" class="px-2 py-0.5 rounded bg-rose-600/20 text-rose-400 border border-rose-600/30 hover:bg-rose-600/40">DEL</button>
-                                </div>
-                            </td>
-                        </tr>`;
-                });
+        function closeEditModal() { document.getElementById('editModal').style.display = 'none'; }
+        function openApisModal() {
+            let currentHost = window.location.origin;
+            let tools = ["ADV", "PAYTM", "IMEI", "CALLTRACER", "UPI", "IFSC", "NUMBER", "PINCODE","IP", "CHALLAN", "FF", "BGMI", "SNAP", "EMAIL", "VEHICLE", "GIT", "INSTA", "TG", "TGIDINFO", "NUMLEAK", "PK", "NAME", "AADHAR", "NUMTOUPI", "PAN", "VEH2NUM", "ADHARFAMILY", "BOMBER"];
+            let container = document.getElementById('urls-list');
+            container.innerHTML = '';
+            tools.forEach(t => {
+                let lower = t.toLowerCase();
+                container.innerHTML += `<div style="margin-bottom:12px; border-bottom:1px solid #220005; padding-bottom:6px;"><span style="color:#ff0033;">[GET]</span> ${currentHost}/api/${lower}?key=<span style="color:#00ff66;">YOUR_KEY</span>&param=value</div>`;
             });
-
-            fetch('/api/admin/logs')
-            .then(res => res.json())
-            .then(data => {
-                const tbody = document.getElementById("logs-tbody");
-                const emptyMsg = document.getElementById("no-logs");
-                tbody.innerHTML = "";
-                if (data.length === 0) { emptyMsg.classList.remove("hidden"); } 
-                else {
-                    emptyMsg.classList.add("hidden");
-                    data.forEach(log => {
-                        tbody.innerHTML += `
-                            <tr class="border-b border-[#1b1926]">
-                                <td class="py-2 text-gray-500">${log.timestamp}</td>
-                                <td class="py-2 text-fuchsia-400 font-mono">${log.key_token}</td>
-                                <td class="py-2 text-sky-400 font-bold uppercase">/api/v1/${log.route}</td>
-                                <td class="py-2 text-gray-300 break-all font-mono text-[10px]">${log.parameters}</td>
-                            </tr>`;
-                    });
-                }
-            });
+            document.getElementById('apisModal').style.display = 'flex';
         }
+        function closeApisModal() { document.getElementById('apisModal').style.display = 'none'; }
     </script>
 </body>
-</html>'''
+</html>
+"""
 
-@app.route('/', methods=['GET'])
-@app.route('/admin', methods=['GET'])
-def index_page():
-    # Fix: Returns the index directly as static HTML text to bypass Jinja compiling conflicts completely
-    return HTML_DASHBOARD, 200, {'Content-Type': 'text/html'}
+# --- SESSIONS & REBOOT PROTECTION MIDDLEWARE ---
+def check_session(request: Request, session_token: Optional[str] = Depends(cookie_sec)):
+    if not session_token or session_token != "authenticated_shayan_session":
+        raise HTTPException(status_code=303, headers={"Location": "/"})
+    return True
 
-@app.route('/api/admin/login', methods=['POST'])
-def admin_login():
-    data = request.json or {}
-    if data.get("username") == "vernex" and data.get("password") == "vernex@16vx":
-        return jsonify({"status": "success", "token": "session_authenticated_shayan"}), 200
-    return jsonify({"status": "error", "message": "Invalid Credentials"}), 401
+@app.exception_handler(HTTPException)
+async def custom_http_exception_handler(request: Request, exc: HTTPException):
+    if exc.status_code == 303:
+        return RedirectResponse(url=exc.headers.get("Location"), status_code=303)
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
-@app.route('/api/admin/keys', methods=['GET', 'POST'])
-def manage_keys():
-    if request.method == 'GET':
-        return jsonify(list(API_KEYS_DB.values())), 200
+# --- ROUTING CONSOLE PIPELINE ENGINE ---
+
+@app.get("/", response_class=HTMLResponse)
+def get_login_page():
+    return LOGIN_HTML.replace("{% if error %}<div class=\"error\">{{ error }}</div>{% endif %}", "")
+
+@app.post("/login")
+def handle_login(username: str = Form(...), password: str = Form(...)):
+    if username == ADMIN_USER and password == ADMIN_PASS:
+        timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        SESSION_LOGS.append({
+            "time": timestamp_str,
+            "user": username,
+            "event": "SUCCESSFUL SYSTEM AUTHENTICATION INITIALIZED",
+            "clearance": "ROOT_ADMIN"
+        })
+        response = RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+        response.set_cookie(key="session_token", value="authenticated_shayan_session", httponly=True)
+        return response
     
-    data = request.json or {}
-    owner = data.get("owner", "Client Profile")
-    custom_token = data.get("custom_token").strip() if data.get("custom_token") else secrets.token_hex(6)
-    daily_limit = int(data.get("daily_limit", 2500))
-    is_lifetime = data.get("is_lifetime", False)
-    expiry_date = data.get("expiry_date", "")
-    scopes = data.get("scopes", [])
+    error_msg = '<div class="error">Access Denied: Bad Transmission Token Signature</div>'
+    return HTMLResponse(content=LOGIN_HTML.replace('{% if error %}<div class="error">{{ error }}</div>{% endif %}', error_msg))
 
-    if not scopes:
-        scopes = ["ALL"]
-
-    API_KEYS_DB[custom_token] = {
-        "owner": owner,
-        "key": custom_token,
-        "daily_limit": daily_limit,
-        "used_count": 0,
-        "is_lifetime": is_lifetime,
-        "expiry_date": expiry_date,
-        "status": "Active",
-        "scopes": scopes
-    }
-    return jsonify({"status": "success", "data": API_KEYS_DB[custom_token]}), 200
-
-@app.route('/api/admin/keys/action', methods=['POST'])
-def key_action():
-    data = request.json or {}
-    target_key = data.get("key")
-    action = data.get("action")
-    
-    if target_key not in API_KEYS_DB:
-        return jsonify({"status": "error", "message": "Key not found"}), 404
-        
-    if action == "DEL":
-        del API_KEYS_DB[target_key]
-    elif action == "TOGGLE":
-        current = API_KEYS_DB[target_key]["status"]
-        API_KEYS_DB[target_key]["status"] = "Suspended" if current == "Active" else "Active"
-    elif action == "RESET":
-        API_KEYS_DB[target_key]["used_count"] = 0
-    
-    return jsonify({"status": "success"}), 200
-
-@app.route('/api/admin/logs', methods=['GET'])
-def get_logs():
-    return jsonify(PIPELINE_LOGS), 200
-
-# Proxy Architecture Controller
-@app.route('/api/v1/<endpoint>', methods=['GET'])
-def proxy_gateway(endpoint):
-    client_key = request.args.get('key')
-    
-    if not client_key or client_key not in API_KEYS_DB:
-        return jsonify({"error": "Unauthorized: Missing or invalid API access key"}), 401
-        
-    key_profile = API_KEYS_DB[client_key]
-    if key_profile["status"] != "Active":
-        return jsonify({"error": "Forbidden: This system key is currently suspended"}), 403
-
-    if not key_profile["is_lifetime"] and key_profile["expiry_date"]:
-        try:
-            expiry_dt = datetime.strptime(key_profile["expiry_date"], "%Y-%m-%dT%H:%M")
-            if datetime.now() > expiry_dt:
-                key_profile["status"] = "Expired"
-                return jsonify({"error": "Forbidden: This system key has expired"}), 403
-        except ValueError:
-            pass
-
-    if key_profile["used_count"] >= key_profile["daily_limit"]:
-        return jsonify({"error": "Too Many Requests: Daily velocity call threshold exhausted"}), 429
-
-    normalized_scope = endpoint.upper()
-    if "ALL" not in key_profile["scopes"] and normalized_scope not in [s.upper() for s in key_profile["scopes"]]:
-        return jsonify({"error": f"Forbidden: Key does not hold privileges for route: {endpoint}"}), 403
-
-    query_params = {k: v for k, v in request.args.items() if k != 'key'}
-    PIPELINE_LOGS.insert(0, {
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "key_token": client_key,
-        "route": endpoint,
-        "parameters": str(query_params)
+@app.get("/logout")
+def handle_logout():
+    timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    SESSION_LOGS.append({
+        "time": timestamp_str,
+        "user": ADMIN_USER,
+        "event": "MANUAL CONSOLE SHUTDOWN TERMINATED BY OPERATOR",
+        "clearance": "EXPIRED"
     })
-    
-    key_profile["used_count"] += 1
+    response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+    response.delete_cookie("session_token")
+    return response
 
-    downstream_params = query_params.copy()
-    downstream_params['key'] = MASTER_KEY
+@app.get("/dashboard", response_class=HTMLResponse)
+def get_dashboard(auth: bool = Depends(check_session)):
+    for k, v in PERMANENT_STATIC_KEYS.items():
+        if k not in API_KEYS_DB: 
+            API_KEYS_DB[k] = v
+
+    rendered = DASHBOARD_HTML.replace("{{ current_admin }}", ADMIN_USER)
+    
+    # 1. Inject Tools lists
+    tools_html = "".join([f'<label class="tool-check"><input type="checkbox" name="scopes" value="{t}"> {t}</label>' for t in AVAILABLE_TOOLS])
+    rendered = rendered.replace('{% for tool in tools %}\n                <label class="tool-check">\n                    <input type="checkbox" name="scopes" value="{{ tool }}" class="tool-checkbox"> {{ tool }}\n                </label>\n                {% endfor %}', tools_html)
+    rendered = rendered.replace('{% for tool in tools_edit %}\n                    <label class="tool-check">\n                        <input type="checkbox" name="scopes" value="{{ tool }}" class="edit-tool-checkbox"> {{ tool }}\n                    </label>\n                    {% endfor %}', tools_html)
+
+    # 2. Render Mathematical Calculator Telemetry UI Bars
+    total_intercepted_calls = sum(ROUTE_USAGE_COUNTER.values())
+    telemetry_list = []
+    
+    # Take top 4 most used routes or show high-priority tracking items if empty
+    sorted_tools = sorted(ROUTE_USAGE_COUNTER.items(), key=lambda x: x[1], reverse=True)[:4]
+    for m_title, m_count in sorted_tools:
+        pct = (m_count / total_intercepted_calls * 100) if total_intercepted_calls > 0 else 0
+        if total_intercepted_calls == 0 and m_title in ["NUMBER", "UPI", "PAYTM", "VEHICLE"]:
+            pct = 0 # Default placeholder state visualization engine
+        telemetry_list.append((m_title, m_count, pct))
+        
+    # If no calls made yet, show standard 4 rows with 0 usage tracking
+    if total_intercepted_calls == 0:
+        telemetry_list = [("NUMBER", 0, 0), ("UPI", 0, 0), ("PAYTM", 0, 0), ("VEHICLE", 0, 0)]
+
+    telemetry_html = ""
+    for title, cnt, p_fill in telemetry_list:
+        telemetry_html += f"""
+        <div class="analyzer-card">
+            <div class="analyzer-title">ROUTE INTERCEPT: {title}</div>
+            <div class="analyzer-value">{cnt} <span style="font-size: 0.75rem; color:#550011;">CALLS</span></div>
+            <div class="metric-bar-bg">
+                <div class="metric-bar-fill" style="width: {p_fill}%;"></div>
+            </div>
+        </div>
+        """
+    rendered = rendered.replace('{% for m_title, m_count, m_pct in telemetry_metrics %}\n        <div class="analyzer-card">\n            <div class="analyzer-title">ROUTE INTERCEPT: {{ m_title }}</div>\n            <div class="analyzer-value">{{ m_count }} <span style="font-size: 0.75rem; color:#550011;">CALLS</span></div>\n            <div class="metric-bar-bg">\n                <div class="metric-bar-fill" style="width: {{ m_pct }}%;"></div>\n            </div>\n        </div>\n        {% endfor %}', telemetry_html)
+
+    # 3. Dynamic Rows Configuration (Clean Unified Layout to Avoid "Joker Layout Wrapping")
+    rows_list = []
+    for k, v in API_KEYS_DB.items():
+        scopes_badges = "".join([f'<span class="badge-scope">{s}</span>' for s in v["scopes"]])
+        status_badge = f'<span class="badge-active">Active</span>' if v["status"] == "Active" else f'<span class="badge-suspended">Suspended</span>'
+        scopes_json = json.dumps(v["scopes"]).replace('"', '&quot;')
+        owner_escaped = v['owner'].replace("'", "\\'")
+        
+        row_ui = f"""
+        <tr>
+            <td>{v['owner']}</td>
+            <td style="color: #ff0033; font-weight:bold;">{v['token']}</td>
+            <td style="color: #ffaa00;">{v['expiry']}</td>
+            <td>{v['used']} / {v['limit']}</td>
+            <td>{status_badge}</td>
+            <td>{scopes_badges}</td>
+            <td>
+                <div class="actions-wrapper">
+                    <button class="btn-action btn-edit" onclick="openEditModal('{v['token']}', '{owner_escaped}', {v['limit']}, '{v['expiry']}', '{scopes_json}')">EDIT</button>
+                    <a href="/keys/reset/{v['token']}" class="btn-action btn-reset">RESET</a>
+                    <a href="/keys/toggle/{v['token']}" class="btn-action btn-toggle {'suspended' if v['status'] != 'Active' else ''}">TOGGLE</a>
+                    <a href="/keys/delete/{v['token']}" class="btn-action btn-del">DEL</a>
+                </div>
+            </td>
+        </tr>
+        """
+        rows_list.append(row_ui)
+    rendered = rendered.replace("{% for row in rows %}\n                {{ row }}\n                {% endfor %}", "".join(rows_list))
+
+    # 4. Session Tracker UI Parser
+    s_logs_html = []
+    for s_log in reversed(SESSION_LOGS[-5:]):
+        s_logs_html.append(f"""
+        <tr>
+            <td style="color:#ffcc00;">[{s_log['time']}]</td>
+            <td>{s_log['user']}</td>
+            <td style="color:#ff3366;">{s_log['event']}</td>
+            <td><span class="badge-scope" style="color:#00ff66; border-color:#004411;">{s_log['clearance']}</span></td>
+        </tr>
+        """)
+    if not s_logs_html:
+        s_logs_html.append('<tr><td colspan="4" style="text-align: center; color: #550011; padding: 12px 0;">No operator sessions tracked on current core context instance.</td></tr>')
+    rendered = rendered.replace("{% for s_log in session_logs_html %}\n                {{ s_log }}\n                {% endfor %}", "".join(s_logs_html))
+
+    # 5. Live Pipeline Request Intercept Streams
+    logs_list = []
+    for log in reversed(PIPELINE_LOGS[-10:]):
+        logs_list.append(f"""
+        <tr>
+            <td>{log['time']}</td>
+            <td>{log['token']}</td>
+            <td><span class="badge-scope" style="color:#00ffff; border-color:#004444;">{log['route']}</span></td>
+            <td style="font-family: monospace; color: #888;">{log['params']}</td>
+        </tr>
+        """)
+    if not logs_list:
+        logs_list.append('<tr><td colspan="4" style="text-align: center; color: #550011; padding: 12px 0;">No raw system intercept streams pipeline detected.</td></tr>')
+    rendered = rendered.replace("{% for log in logs %}\n                {{ log }}\n                {% endfor %}", "".join(logs_list))
+
+    return rendered
+
+# --- API LIFECYCLE RESTRUCTURING MANAGEMENT ---
+
+@app.post("/keys/generate")
+def generate_key(owner: str = Form(...), token: Optional[str] = Form(None), limit: int = Form(...), expiry_date: Optional[str] = Form(None), scopes: List[str] = Form(None), auth: bool = Depends(check_session)):
+    key_token = token.strip() if token and token.strip() else f"vx-{int(time.time())}"
+    assigned_scopes = scopes if scopes else ["ALL"]
+    expiry_str = expiry_date.strip() if expiry_date and expiry_date.strip() else "LIFETIME ACCESS"
+
+    API_KEYS_DB[key_token] = {
+        "owner": owner, "token": key_token, "expiry": expiry_str,
+        "limit": limit, "used": 0, "status": "Active", "scopes": assigned_scopes
+    }
+    return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+
+@app.post("/keys/edit")
+def edit_key(old_token: str = Form(...), token: str = Form(...), owner: str = Form(...), limit: int = Form(...), expiry_date: str = Form(...), scopes: List[str] = Form(None), auth: bool = Depends(check_session)):
+    assigned_scopes = scopes if scopes else ["ALL"]
+    previous_usage_count = 0
+    previous_status = "Active"
+    
+    if old_token in API_KEYS_DB:
+        previous_usage_count = API_KEYS_DB[old_token]["used"]
+        previous_status = API_KEYS_DB[old_token]["status"]
+        del API_KEYS_DB[old_token]
+
+    API_KEYS_DB[token] = {
+        "owner": owner, "token": token, "expiry": expiry_date,
+        "limit": limit, "used": previous_usage_count, "status": previous_status, "scopes": assigned_scopes
+    }
+    return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+
+@app.get("/keys/toggle/{token}")
+def toggle_key(token: str, auth: bool = Depends(check_session)):
+    if token in API_KEYS_DB:
+        current = API_KEYS_DB[token]["status"]
+        API_KEYS_DB[token]["status"] = "Suspended" if current == "Active" else "Active"
+    return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+
+@app.get("/keys/reset/{token}")
+def reset_key_usage(token: str, auth: bool = Depends(check_session)):
+    if token in API_KEYS_DB:
+        API_KEYS_DB[token]["used"] = 0
+    return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+
+@app.get("/keys/delete/{token}")
+def delete_key(token: str, auth: bool = Depends(check_session)):
+    if token in API_KEYS_DB: del API_KEYS_DB[token]
+    if token in PERMANENT_STATIC_KEYS: del PERMANENT_STATIC_KEYS[token]
+    return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+
+# --- CORE API PROXY GATEWAY INTEGRATION LAYER ---
+@app.get("/api/{route}")
+def proxy_gateway(route: str, request: Request, key: str):
+    for k, v in PERMANENT_STATIC_KEYS.items():
+        if k not in API_KEYS_DB: API_KEYS_DB[k] = v
+
+    if key not in API_KEYS_DB:
+        return JSONResponse(status_code=403, content={"error": "Access Revoked: Invalid Token Identification Matrix"})
+    
+    key_profile = API_KEYS_DB[key]
+    if key_profile["status"] != "Active":
+        return JSONResponse(status_code=403, content={"error": "Access Denied: This target API Key is currently SUSPENDED"})
+
+    current_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    query_params = dict(request.query_params)
+    if "key" in query_params: del query_params["key"]
+    
+    PIPELINE_LOGS.append({"time": current_time_str, "token": key, "route": route.upper(), "params": str(query_params)})
+    
+    # Increment Analytics Tracker Calculator Matrix counter
+    route_upper = route.upper()
+    if route_upper in ROUTE_USAGE_COUNTER:
+        ROUTE_USAGE_COUNTER[route_upper] += 1
+    else:
+        ROUTE_USAGE_COUNTER[route_upper] = 1
+
+    if "ALL" not in key_profile["scopes"] and route_upper not in key_profile["scopes"]:
+        return JSONResponse(status_code=403, content={"error": f"Unauthorized Access Scope Framework for Sub-Tool: {route_upper}"})
+
+    if key_profile["expiry"] != "LIFETIME ACCESS":
+        today_date = datetime.now().strftime("%Y-%m-%d")
+        if today_date > key_profile["expiry"]:
+            return JSONResponse(status_code=403, content={"error": "Token lifecycle execution window has expired."})
+            
+    if key_profile["used"] >= key_profile["limit"]:
+        return JSONResponse(status_code=429, content={"error": "Transaction call allocation volume limits fully exhausted."})
+
+    key_profile["used"] += 1
+
+    upstream_params = dict(request.query_params)
+    upstream_params["key"] = MASTER_KEY 
     
     try:
-        response = requests.get(f"{UPSTREAM_BASE_URL}/{endpoint}", params=downstream_params, timeout=12)
-        content_type = response.headers.get('Content-Type', '')
-        
-        # Intercept and modify textual content responses to substitute tags
-        if "application/json" in content_type or "text/" in content_type:
-            text_data = response.text
-            
-            # Signature substitution layout mapping definitions
-            replacements = {
-                "@ftgamer2": "@vernexzzz",
-                "https://t.me/lynx_api": "https://t.me/shayan_explorer_channel",
-                "@@bronex_ultra": "@vernexzzz",
-                "@@bornex_ultra": "@vernexzzz",
-                "@bornex_ultra": "@vernexzzz"
-            }
-            for old, new in replacements.items():
-                text_data = text_data.replace(old, new)
-                
-            return (text_data, response.status_code, [('Content-Type', content_type)])
-            
-        return (response.content, response.status_code, response.headers.items())
-    except Exception as e:
-        return jsonify({"error": "Internal Server Gateway Error Connecting Downstream Core", "details": str(e)}), 502
+        target_url = f"{TARGET_BASE_API}/{route}"
+        upstream_response = requests.get(target_url, params=upstream_params, timeout=12)
+        cleaned_text_payload = white_label_filter(upstream_response.text)
+        try:
+            return JSONResponse(status_code=upstream_response.status_code, content=json.loads(cleaned_text_payload))
+        except json.JSONDecodeError:
+            return HTMLResponse(status_code=upstream_response.status_code, content=cleaned_text_payload)
+    except requests.exceptions.RequestException as exc:
+        return JSONResponse(status_code=502, content={"error": "Upstream communication gateway failure", "details": str(exc)})
 
-if __name__ == '__main__':
-    app.run(port=3000, debug=True)
 
