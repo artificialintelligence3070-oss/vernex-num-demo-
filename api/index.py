@@ -21,7 +21,7 @@ ADMIN_PASS = "vernex@16vx"
 RAZORPAY_KEY_ID = "rzp_live_TCc5USt5FlmfrI"
 RAZORPAY_SECRET = "sMwLGQAEQePA0qSOYvFFII1h"
 TELEGRAM_BOT_TOKEN = "8378722740:AAH9GthadrXQlTSp8pmPvlUnogXxhHv371s"
-TELEGRAM_CHAT_ID = "-1002234567890"
+TELEGRAM_CHAT_ID = "-1003950462418"
 
 # --- Insulated Lazy Driver Initializer Pattern ---
 def get_razorpay_client():
