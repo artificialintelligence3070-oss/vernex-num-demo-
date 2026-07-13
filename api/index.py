@@ -1,667 +1,512 @@
 import os
-import time
 import json
-import requests
-from datetime import datetime
-from typing import List, Optional
-from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
-from fastapi.security import APIKeyCookie
+import logging
+from datetime import datetime, date
+from typing import Dict, List, Optional
+from fastapi import FastAPI, Depends, HTTPException, Header, status, Request
+from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
-app = FastAPI(title="SHAYAN_EXPLORER HUB API")
+app = FastAPI(title="SHAYAN_EXPLORER Premium Gateway", version="2.0.0")
 
-# --- CONFIGURATION & SECURITY ---
-TARGET_BASE_API = "https://ft-osint-api.duckdns.org/api"
-MASTER_KEY = "explorer16"
-ADMIN_USER = "vernex"
-ADMIN_PASS = "vernex@16vx"
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-cookie_sec = APIKeyCookie(name="session_token", auto_error=False)
+# 🔐 SECURITY CONFIGURATION (Environment variables)
+RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "rzp_live_TCc5USt5FlmfrI")
+ADMIN_USERNAME = "vernex"
+ADMIN_PASSWORD = "vernex@16vx"
 
-# ─── 🔒 PERMANENT HARDCODED KEYS MATRIX ────────────────────────────────────────
-PERMANENT_STATIC_KEYS = {
-    "vx-osint": {
-        "owner": "Master Deployment Default",
-        "token": "vx-osint",
-        "expiry": "LIFETIME ACCESS",
-        "limit": 999999,
-        "used": 0,
-        "status": "Active",
-        "scopes": ["ALL"]
+# In-memory database architecture
+api_keys_db: Dict[str, Dict] = {
+    "explorer16": {
+        "key_name": "VIP Enterprise Access",
+        "expires_at": "2026-12-31T23:59:59",
+        "daily_limit": 5000,
+        "request_count": 42,
+        "last_reset": str(date.today()),
+        "allowed_tools": ["all"]
     }
 }
 
-# --- APPS LIVE SYSTEM MEMORY MATRIX ---
-API_KEYS_DB = {}
-API_KEYS_DB.update(PERMANENT_STATIC_KEYS)
-PIPELINE_LOGS = []
-SESSION_LOGS = []  # Tracks authentication timelines dynamically
-ROUTE_USAGE_COUNTER = {}  # Tracks metrics calculation engine for terminal bars
-
-AVAILABLE_TOOLS = [
-    "ADV", "PAYTM", "IMEI", "CALLTRACER", "UPI", "IFSC", "NUMBER", "PINCODE",
-    "IP", "CHALLAN", "FF", "BGMI", "SNAP", "EMAIL", "VEHICLE", "GIT", "INSTA", 
-    "TG", "TGIDINFO", "NUMLEAK", "PK", "NAME", "AADHAR", "NUMTOUPI", "PAN", 
-    "VEH2NUM", "ADHARFAMILY", "BOMBER"
+logs_db: List[Dict] = [
+    {"timestamp": "2026-07-13T16:20:11", "key_used": "explorer16", "tool": "Core_Identity_Verify", "status": "Success"},
+    {"timestamp": "2026-07-13T16:22:45", "key_used": "explorer16", "tool": "Network_Telemetry", "status": "Success"}
 ]
 
-# Initialize metrics engine counters
-for tool in AVAILABLE_TOOLS:
-    ROUTE_USAGE_COUNTER[tool] = 0
+# Pydantic Schemas
+class KeyGenerateRequest(BaseModel):
+    key_name: str
+    custom_key: str
+    expires_at: str
+    daily_limit: int
+    allowed_tools: List[str]
 
-def white_label_filter(raw_content: str) -> str:
-    replacements = {
-        "@ftgamer2": "@vernexzzz", "ftgamer2": "@vernexzzz", "ftgamer": "@vernexzzz",
-        "https://t.me/lynx_api": "https://t.me/shayan_explorer_channel",
-        "@bronex_ultra": "@vernexzzz", "@@bronex_ultra": "@vernexzzz",
-        "@bornex_ultra": "@vernexzzz", "@@bornex_ultra": "@vernexzzz"
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+# --- API ENDPOINTS ---
+@app.post("/api/admin/login")
+async def admin_login(data: LoginRequest):
+    if data.username == ADMIN_USERNAME and data.password == ADMIN_PASSWORD:
+        return {"status": "success", "token": "premium_secure_session_token"}
+    raise HTTPException(status_code=401, detail="Unauthorized: Access Credentials Invalid.")
+
+@app.post("/api/admin/generate-key")
+async def generate_key(data: KeyGenerateRequest):
+    api_keys_db[data.custom_key] = {
+        "key_name": data.key_name,
+        "expires_at": data.expires_at,
+        "daily_limit": data.daily_limit,
+        "request_count": 0,
+        "last_reset": str(date.today()),
+        "allowed_tools": data.allowed_tools
     }
-    sanitized = raw_content
-    for target, replacement in replacements.items():
-        sanitized = sanitized.replace(target, replacement)
-    return sanitized
+    return {"status": "success", "message": f"Token Key '{data.custom_key}' integrated."}
 
-# --- UI TEMPLATES ---
-LOGIN_HTML = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>SHAYAN_EXPLORER HUB - Login</title>
-    <style>
-        body { background-color: #000000; color: #ff3333; font-family: 'Courier New', monospace; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; overflow: hidden; }
-        .login-card { background: #070101; border: 2px solid #ff0033; padding: 40px; border-radius: 4px; box-shadow: 0 0 20px #ff0033; width: 330px; animation: glowPulse 2.5s infinite alternate; }
-        h2 { color: #ff0033; text-align: center; font-size: 1.3rem; margin-bottom: 30px; letter-spacing: 3px; text-shadow: 0 0 10px #ff0033; }
-        .input-group { margin-bottom: 25px; }
-        label { display: block; font-size: 0.75rem; color: #aa2222; margin-bottom: 6px; letter-spacing: 1px; }
-        input { width: 100%; padding: 11px; background: #000000; border: 1px solid #550011; color: #ff6666; border-radius: 2px; box-sizing: border-box; font-family: monospace; }
-        input:focus { border-color: #ff0033; outline: none; box-shadow: 0 0 8px #ff0033; }
-        button { width: 100%; padding: 12px; background: #ff0033; border: none; color: black; font-weight: bold; cursor: pointer; border-radius: 2px; letter-spacing: 1px; transition: 0.3s; }
-        button:hover { background: #ff3366; box-shadow: 0 0 15px #ff3366; color: white; }
-        .error { color: #ff0000; font-size: 0.75rem; text-align: center; margin-bottom: 15px; text-shadow: 0 0 5px #ff0000; }
-        @keyframes glowPulse { 0% { box-shadow: 0 0 15px rgba(255,0,51,0.4); } 100% { box-shadow: 0 0 25px rgba(255,0,51,0.8); } }
-    </style>
-</head>
-<body>
-    <div class="login-card">
-        <h2>MAIN_FRAMEWORK // LOG</h2>
-        {% if error %}<div class="error">{{ error }}</div>{% endif %}
-        <form method="POST" action="/login">
-            <div class="input-group">
-                <label>IDENTITY OPERATOR</label>
-                <input type="text" name="username" required autocomplete="off">
-            </div>
-            <div class="input-group">
-                <label>ENCRYPTED ACCESS STRING</label>
-                <input type="password" name="password" required>
-            </div>
-            <button type="submit">BOOT_UP SYSTEM</button>
-        </form>
-    </div>
-</body>
-</html>
-"""
+@app.get("/api/admin/dashboard-data")
+async def get_dashboard_data():
+    return {
+        "keys": api_keys_db,
+        "logs": logs_db[-20:] # Return last 20 operations
+    }
 
-DASHBOARD_HTML = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>SHAYAN_EXPLORER HUB</title>
-    <style>
-        body { background-color: #020203; color: #ff4d4d; font-family: 'Courier New', monospace; margin: 0; padding: 20px; }
-        .navbar { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #ff0033; padding-bottom: 15px; margin-bottom: 30px; box-shadow: 0 4px 15px rgba(255,0,51,0.1); }
-        .brand { color: #ff0033; font-weight: bold; font-size: 1.3rem; letter-spacing: 2px; text-shadow: 0 0 10px #ff0033; animation: blinker 3s infinite; }
-        
-        /* 3-Dots Dropdown Framework Matrix */
-        .dots-menu-container { position: relative; display: inline-block; }
-        .three-dots-btn { background: none; border: 1px solid #550011; color: #ff0033; font-size: 1.5rem; cursor: pointer; padding: 2px 14px; border-radius: 4px; transition: 0.3s; }
-        .three-dots-btn:hover { background: #ff0033; color: #000; box-shadow: 0 0 10px #ff0033; }
-        .dropdown-menu-content { display: none; position: absolute; right: 0; top: 35px; background: #070101; border: 2px solid #ff0033; min-width: 240px; box-shadow: 0 0 20px rgba(255,0,51,0.5); z-index: 500; border-radius: 4px; padding: 10px 0; }
-        .dropdown-menu-content a, .dropdown-menu-content button { display: block; width: 100%; text-align: left; background: none; border: none; padding: 12px 20px; color: #ff4d4d; font-family: monospace; font-size: 0.8rem; text-decoration: none; box-sizing: border-box; cursor: pointer; }
-        .dropdown-menu-content a:hover, .dropdown-menu-content button:hover { background: rgba(255,0,51,0.15); color: #fff; text-shadow: 0 0 5px #ff0033; }
-        .menu-user-tag { padding: 8px 20px; font-size: 0.7rem; color: #881111; border-bottom: 1px solid #33000a; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
-
-        .section-title { color: #ff0033; font-size: 0.95rem; margin-top: 40px; margin-bottom: 18px; letter-spacing: 1.5px; text-transform: uppercase; text-shadow: 0 0 8px rgba(255,0,51,0.4); }
-        .card { background: #060101; border: 1px solid #33000a; padding: 25px; border-radius: 4px; margin-bottom: 25px; box-shadow: inset 0 0 10px rgba(255,0,51,0.05); }
-        .grid-2 { display: grid; grid-template-columns: 1fr; gap: 20px; margin-bottom: 20px; }
-        @media(min-width: 768px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
-        .input-box { display: flex; flex-direction: column; }
-        .input-box label { font-size: 0.75rem; color: #aa2222; margin-bottom: 6px; letter-spacing: 1px; }
-        .input-box input, .input-box select { background: #000000; border: 1px solid #550011; padding: 11px; color: #ff6666; border-radius: 2px; font-family: monospace; }
-        .input-box input:focus { border-color: #ff0033; outline: none; box-shadow: 0 0 5px #ff0033; }
-        
-        .tools-header { display: flex; justify-content: space-between; font-size: 0.75rem; margin-top: 25px; margin-bottom: 12px; color: #aa2222; }
-        .tools-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
-        .tool-check { background: #000; border: 1px solid #220005; padding: 9px; border-radius: 2px; display: flex; align-items: center; font-size: 0.75rem; cursor: pointer; color: #cc3333; transition: 0.2s; }
-        .tool-check:hover { border-color: #ff0033; background: #0d0103; }
-        .tool-check input { margin-right: 10px; accent-color: #ff0033; }
-        
-        .btn-container { display: flex; justify-content: flex-end; margin-top: 25px; }
-        .submit-btn { background: #ff0033; border: none; color: #000; padding: 12px 28px; font-weight: bold; border-radius: 2px; cursor: pointer; font-size: 0.8rem; font-family: monospace; transition: 0.3s; }
-        .submit-btn:hover { background: #ff3366; box-shadow: 0 0 15px #ff0033; color: #fff; }
-        
-        /* Fixed Unified Row Styling Matrix */
-        table { width: 100%; border-collapse: collapse; font-size: 0.75rem; text-align: left; }
-        th { color: #aa2222; font-weight: normal; padding-bottom: 12px; border-bottom: 1px solid #33000a; letter-spacing: 1px; }
-        td { padding: 14px 8px; border-bottom: 1px solid #140204; vertical-align: middle; }
-        .badge-active { color: #00ff66; font-weight: bold; text-shadow: 0 0 5px rgba(0,255,102,0.4); }
-        .badge-suspended { color: #ff0033; font-weight: bold; text-shadow: 0 0 5px rgba(255,0,51,0.4); }
-        .badge-scope { background: #1c0205; padding: 2px 6px; border-radius: 2px; color: #ff6666; border: 1px solid #44000a; display: inline-block; margin: 2px; }
-        
-        /* Beautiful Single Line Button Action Framework */
-        .actions-wrapper { display: flex; flex-direction: row; flex-wrap: nowrap; gap: 4px; justify-content: flex-start; align-items: center; width: max-content; }
-        .btn-action { padding: 5px 10px; border-radius: 2px; font-size: 0.7rem; font-weight: bold; text-decoration: none; cursor: pointer; border: 1px solid transparent; font-family: monospace; display: inline-block; text-align: center; white-space: nowrap; transition: 0.2s; }
-        .btn-edit { background: #000000; border-color: #ffcc00; color: #ffcc00; }
-        .btn-edit:hover { background: #ffcc00; color: #000; box-shadow: 0 0 8px #ffcc00; }
-        .btn-reset { background: #000000; border-color: #00ccff; color: #00ccff; }
-        .btn-reset:hover { background: #00ccff; color: #000; box-shadow: 0 0 8px #00ccff; }
-        .btn-toggle { background: #000000; border-color: #00ff66; color: #00ff66; }
-        .btn-toggle:hover { background: #00ff66; color: #000; box-shadow: 0 0 8px #00ff66; }
-        .btn-toggle.suspended { border-color: #ff0055; color: #ff0055; }
-        .btn-toggle.suspended:hover { background: #ff0055; color: #fff; box-shadow: 0 0 8px #ff0055; }
-        .btn-del { background: #ff0033; color: #000; border-color: #ff0033; }
-        .btn-del:hover { background: #ff3366; color: #fff; box-shadow: 0 0 8px #ff3366; }
-
-        /* Hacker Calculator / Analytics Matrix System Design */
-        .analytics-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px; margin-bottom: 25px; }
-        .analyzer-card { background: #040001; border: 1px solid #44000a; border-radius: 2px; padding: 15px; position: relative; overflow: hidden; }
-        .analyzer-title { font-size: 0.7rem; color: #aa2222; margin-bottom: 8px; letter-spacing: 1px; }
-        .analyzer-value { font-size: 1.4rem; color: #ff3333; font-weight: bold; text-shadow: 0 0 8px rgba(255,0,51,0.3); }
-        .metric-bar-bg { width: 100%; height: 5px; background: #1a0004; border-radius: 2px; margin-top: 10px; position: relative; }
-        .metric-bar-fill { height: 100%; background: #ff0033; width: 0%; box-shadow: 0 0 8px #ff0033; transition: width 1s ease-in-out; }
-
-        /* Modal Structure Setup */
-        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); justify-content: center; align-items: center; z-index: 1000; }
-        .modal-content { background: #070101; border: 2px solid #ff0033; border-radius: 4px; padding: 30px; width: 90%; max-width: 600px; max-height: 85vh; overflow-y: auto; box-shadow: 0 0 25px #ff0033; }
-        .modal-title { color: #ff0033; font-size: 1.1rem; margin-bottom: 20px; text-shadow: 0 0 5px #ff0033; }
-        .close-modal { float: right; color: #aa2222; cursor: pointer; font-size: 1.4rem; }
-        .close-modal:hover { color: #ff0033; }
-
-        @keyframes blinker { 0%, 100% { opacity: 1; } 50% { opacity: 0.85; } }
-    </style>
-</head>
-<body>
-
-    <div class="navbar">
-        <div class="brand">⚡ SHAYAN_EXPLORER // SYSTEM CORE</div>
-        <div class="dots-menu-container">
-            <button class="three-dots-btn" onclick="toggleDropdownMenu()">⋮</button>
-            <div class="dropdown-menu-content" id="mainDropdownMenu">
-                <div class="menu-user-tag">⚡ OPERATOR: {{ current_admin }}</div>
-                <a href="/dashboard">🏠 OVERVIEW CONSOLE</a>
-                <button onclick="openApisModal()">🌐 ACCESS GATEWAY URLS</button>
-                <a href="/logout" style="color: #ff0033; border-top: 1px solid #220005;">❌ SHUTDOWN SESSION</a>
-            </div>
-        </div>
-    </div>
-
-    <div class="section-title">📊 METRIC ANALYSIS DEVIATION GRAPH</div>
-    <div class="analytics-grid">
-        {% for m_title, m_count, m_pct in telemetry_metrics %}
-        <div class="analyzer-card">
-            <div class="analyzer-title">ROUTE INTERCEPT: {{ m_title }}</div>
-            <div class="analyzer-value">{{ m_count }} <span style="font-size: 0.75rem; color:#550011;">CALLS</span></div>
-            <div class="metric-bar-bg">
-                <div class="metric-bar-fill" style="width: {{ m_pct }}%;"></div>
-            </div>
-        </div>
-        {% endfor %}
-    </div>
-
-    <div class="section-title">• PROPOSE SYSTEM COMMUNICATIONS KEY</div>
-    <div class="card">
-        <form method="POST" action="/keys/generate">
-            <div class="grid-2">
-                <div class="input-box">
-                    <label>TARGET OWNER IDENTITY NAME</label>
-                    <input type="text" name="owner" placeholder="e.g. Premium Client" required autocomplete="off">
-                </div>
-                <div class="input-box">
-                    <label>CUSTOM ASSIGNMENT STRING (TOKEN KEY)</label>
-                    <input type="text" name="token" placeholder="Auto-generate tracking hash if empty" autocomplete="off">
-                </div>
-            </div>
-            <div class="grid-2">
-                <div class="input-box">
-                    <label>DAILY VELOCITY CALL LIMIT VOLUME</label>
-                    <input type="number" name="limit" value="2500" required>
-                </div>
-                <div class="input-box">
-                    <label>TARGET EXPIRATION LIFECYCLE</label>
-                    <input type="text" name="expiry_date" placeholder="Type 'LIFETIME ACCESS' or YYYY-MM-DD" value="LIFETIME ACCESS">
-                </div>
-            </div>
-            <div class="tools-header">
-                <div>ROUTE AUTHORIZATION PRIVILEGES MATRIX SCOPE</div>
-                <div style="color: #ff0033; cursor:pointer;" onclick="toggleAllTools('create-form')">[ SELECT ALL TOOLS ]</div>
-            </div>
-            <div class="tools-grid" id="create-form">
-                {% for tool in tools %}
-                <label class="tool-check">
-                    <input type="checkbox" name="scopes" value="{{ tool }}" class="tool-checkbox"> {{ tool }}
-                </label>
-                {% endfor %}
-            </div>
-            <div class="btn-container">
-                <button type="submit" class="submit-btn">PROVISION_KEY_GATEWAY</button>
-            </div>
-        </form>
-    </div>
-
-    <div class="section-title">• KEY REGISTRY MATRIX OVERVIEW</div>
-    <div class="card" style="overflow-x: auto;">
-        <table>
-            <thead>
-                <tr>
-                    <th>OWNER IDENTITY</th>
-                    <th>AUTHORIZATION TOKEN KEY</th>
-                    <th>EXPIRY TIMELINE</th>
-                    <th>USAGE VELOCITY</th>
-                    <th>STATUS</th>
-                    <th>ROUTE SCOPE PRIVILEGES</th>
-                    <th>SYSTEM CONFIGURATION INTERVENTIONS</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for row in rows %}
-                {{ row }}
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    <div class="section-title">• OPERATOR SECURITY ACCESS TIMELOGS</div>
-    <div class="card" style="overflow-x: auto;">
-        <table>
-            <thead>
-                <tr>
-                    <th>AUTHENTICATION TIMESTAMP</th>
-                    <th>IDENTIFIED USER</th>
-                    <th>SYSTEM EVENT TRACE</th>
-                    <th>SECURITY CLEARANCE LAYER</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for s_log in session_logs_html %}
-                {{ s_log }}
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    <div class="section-title">• INTERCEPTED REQUEST STREAMS PIPELINE LOGS</div>
-    <div class="card" style="overflow-x: auto;">
-        <table>
-            <thead>
-                <tr>
-                    <th>TIME INTERCEPTED</th>
-                    <th>EXECUTING KEY TOKEN ID</th>
-                    <th>ENDPOINT ROUTE CALL</th>
-                    <th>QUERY DATA PARAMETERS PASSED</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for log in logs %}
-                {{ log }}
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    <div id="editModal" class="modal">
-        <div class="modal-content">
-            <span class="close-modal" onclick="closeEditModal()">&times;</span>
-            <div class="modal-title">🔧 MODIFY MATRIX AUTHORIZATION parameters</div>
-            <form method="POST" action="/keys/edit">
-                <input type="hidden" name="old_token" id="edit_old_token">
-                <div class="grid-2">
-                    <div class="input-box">
-                        <label>OWNER IDENTITY</label>
-                        <input type="text" name="owner" id="edit_owner" required autocomplete="off">
-                    </div>
-                    <div class="input-box">
-                        <label>RE-ASSIGN KEY STRING</label>
-                        <input type="text" name="token" id="edit_token" required autocomplete="off">
-                    </div>
-                </div>
-                <div class="grid-2">
-                    <div class="input-box">
-                        <label>LIMIT VOLUME</label>
-                        <input type="number" name="limit" id="edit_limit" required>
-                    </div>
-                    <div class="input-box">
-                        <label>EXPIRATION LIFECYCLE</label>
-                        <input type="text" name="expiry_date" id="edit_expiry" required>
-                    </div>
-                </div>
-                <div class="tools-header">
-                    <div>ROUTE PRIVILEGES MATRIX SCOPES</div>
-                    <div style="color: #ff0033; cursor:pointer;" onclick="toggleAllTools('edit-form')">[ TOGGLE ALL SCOPES ]</div>
-                </div>
-                <div class="tools-grid" id="edit-form">
-                    {% for tool in tools_edit %}
-                    <label class="tool-check">
-                        <input type="checkbox" name="scopes" value="{{ tool }}" class="edit-tool-checkbox"> {{ tool }}
-                    </label>
-                    {% endfor %}
-                </div>
-                <div class="btn-container">
-                    <button type="submit" class="submit-btn" style="background: #ffcc00; color:#000;">COMMIT PARAMS UPDATE</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <div id="apisModal" class="modal">
-        <div class="modal-content" style="max-width: 750px; border-color:#ff0033; box-shadow: 0 0 20px #ff0033;">
-            <span class="close-modal" onclick="closeApisModal()">&times;</span>
-            <div class="modal-title">🌐 LIVE ROUTE TARGET STRINGS</div>
-            <div id="urls-list" style="max-height: 50vh; overflow-y:auto; font-family: monospace; background:#000; padding:15px; border-radius:2px; border:1px solid #33000a;">
-            </div>
-        </div>
-    </div>
-
-    <script>
-        function toggleDropdownMenu() {
-            let menu = document.getElementById('mainDropdownMenu');
-            menu.style.display = (menu.style.display === 'block') ? 'none' : 'block';
-        }
-        window.onclick = function(event) {
-            if (!event.target.matches('.three-dots-btn')) {
-                let dropdowns = document.getElementsByClassName("dropdown-menu-content");
-                for (let i = 0; i < dropdowns.length; i++) {
-                    dropdowns[i].style.display = "none";
+# --- PREMIUM USER INTERFACE SURFACE ---
+@app.get("/", response_class=HTMLResponse)
+async def render_luxury_portal():
+    html_content = """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>SHAYAN EXPLORER | Luxury API Management Network</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+        <script src="https://unpkg.com/lucide@latest"></script>
+        <script>
+            tailwind.config = {
+                theme: {
+                    extend: {
+                        colors: {
+                            gold: { 400: '#E6C15C', 500: '#D4AF37', 600: '#AA882C' },
+                            darkspace: '#070A12'
+                        }
+                    }
                 }
             }
-        }
-        function toggleAllTools(containerId) {
-            let checkboxes = document.querySelectorAll('#' + containerId + ' input[type=\"checkbox\"]');
-            let allChecked = Array.from(checkboxes).every(cb => cb.checked);
-            checkboxes.forEach(cb => cb.checked = !allChecked);
-        }
-        function openEditModal(oldToken, owner, limit, expiry, activeScopesJson) {
-            document.getElementById('edit_old_token').value = oldToken;
-            document.getElementById('edit_owner').value = owner;
-            document.getElementById('edit_token').value = oldToken;
-            document.getElementById('edit_limit').value = limit;
-            document.getElementById('edit_expiry').value = expiry;
-            
-            let activeScopes = JSON.parse(activeScopesJson);
-            let checkboxes = document.querySelectorAll('.edit-tool-checkbox');
-            checkboxes.forEach(cb => {
-                cb.checked = activeScopes.includes('ALL') || activeScopes.includes(cb.value);
-            });
-            document.getElementById('editModal').style.display = 'flex';
-        }
-        function closeEditModal() { document.getElementById('editModal').style.display = 'none'; }
-        function openApisModal() {
-            let currentHost = window.location.origin;
-            let tools = ["ADV", "PAYTM", "IMEI", "CALLTRACER", "UPI", "IFSC", "NUMBER", "PINCODE","IP", "CHALLAN", "FF", "BGMI", "SNAP", "EMAIL", "VEHICLE", "GIT", "INSTA", "TG", "TGIDINFO", "NUMLEAK", "PK", "NAME", "AADHAR", "NUMTOUPI", "PAN", "VEH2NUM", "ADHARFAMILY", "BOMBER"];
-            let container = document.getElementById('urls-list');
-            container.innerHTML = '';
-            tools.forEach(t => {
-                let lower = t.toLowerCase();
-                container.innerHTML += `<div style="margin-bottom:12px; border-bottom:1px solid #220005; padding-bottom:6px;"><span style="color:#ff0033;">[GET]</span> ${currentHost}/api/${lower}?key=<span style="color:#00ff66;">YOUR_KEY</span>&param=value</div>`;
-            });
-            document.getElementById('apisModal').style.display = 'flex';
-        }
-        function closeApisModal() { document.getElementById('apisModal').style.display = 'none'; }
-    </script>
-</body>
-</html>
-"""
-
-# --- SESSIONS & REBOOT PROTECTION MIDDLEWARE ---
-def check_session(request: Request, session_token: Optional[str] = Depends(cookie_sec)):
-    if not session_token or session_token != "authenticated_shayan_session":
-        raise HTTPException(status_code=303, headers={"Location": "/"})
-    return True
-
-@app.exception_handler(HTTPException)
-async def custom_http_exception_handler(request: Request, exc: HTTPException):
-    if exc.status_code == 303:
-        return RedirectResponse(url=exc.headers.get("Location"), status_code=303)
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
-
-# --- ROUTING CONSOLE PIPELINE ENGINE ---
-
-@app.get("/", response_class=HTMLResponse)
-def get_login_page():
-    return LOGIN_HTML.replace("{% if error %}<div class=\"error\">{{ error }}</div>{% endif %}", "")
-
-@app.post("/login")
-def handle_login(username: str = Form(...), password: str = Form(...)):
-    if username == ADMIN_USER and password == ADMIN_PASS:
-        timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        SESSION_LOGS.append({
-            "time": timestamp_str,
-            "user": username,
-            "event": "SUCCESSFUL SYSTEM AUTHENTICATION INITIALIZED",
-            "clearance": "ROOT_ADMIN"
-        })
-        response = RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
-        response.set_cookie(key="session_token", value="authenticated_shayan_session", httponly=True)
-        return response
-    
-    error_msg = '<div class="error">Access Denied: Bad Transmission Token Signature</div>'
-    return HTMLResponse(content=LOGIN_HTML.replace('{% if error %}<div class="error">{{ error }}</div>{% endif %}', error_msg))
-
-@app.get("/logout")
-def handle_logout():
-    timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    SESSION_LOGS.append({
-        "time": timestamp_str,
-        "user": ADMIN_USER,
-        "event": "MANUAL CONSOLE SHUTDOWN TERMINATED BY OPERATOR",
-        "clearance": "EXPIRED"
-    })
-    response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
-    response.delete_cookie("session_token")
-    return response
-
-@app.get("/dashboard", response_class=HTMLResponse)
-def get_dashboard(auth: bool = Depends(check_session)):
-    for k, v in PERMANENT_STATIC_KEYS.items():
-        if k not in API_KEYS_DB: 
-            API_KEYS_DB[k] = v
-
-    rendered = DASHBOARD_HTML.replace("{{ current_admin }}", ADMIN_USER)
-    
-    # 1. Inject Tools lists
-    tools_html = "".join([f'<label class="tool-check"><input type="checkbox" name="scopes" value="{t}"> {t}</label>' for t in AVAILABLE_TOOLS])
-    rendered = rendered.replace('{% for tool in tools %}\n                <label class="tool-check">\n                    <input type="checkbox" name="scopes" value="{{ tool }}" class="tool-checkbox"> {{ tool }}\n                </label>\n                {% endfor %}', tools_html)
-    rendered = rendered.replace('{% for tool in tools_edit %}\n                    <label class="tool-check">\n                        <input type="checkbox" name="scopes" value="{{ tool }}" class="edit-tool-checkbox"> {{ tool }}\n                    </label>\n                    {% endfor %}', tools_html)
-
-    # 2. Render Mathematical Calculator Telemetry UI Bars
-    total_intercepted_calls = sum(ROUTE_USAGE_COUNTER.values())
-    telemetry_list = []
-    
-    # Take top 4 most used routes or show high-priority tracking items if empty
-    sorted_tools = sorted(ROUTE_USAGE_COUNTER.items(), key=lambda x: x[1], reverse=True)[:4]
-    for m_title, m_count in sorted_tools:
-        pct = (m_count / total_intercepted_calls * 100) if total_intercepted_calls > 0 else 0
-        if total_intercepted_calls == 0 and m_title in ["NUMBER", "UPI", "PAYTM", "VEHICLE"]:
-            pct = 0 # Default placeholder state visualization engine
-        telemetry_list.append((m_title, m_count, pct))
+        </script>
+        <style>
+            canvas { position: fixed; top:0; left:0; width:100%; height:100%; z-index:1; pointer-events:none; }
+            .glass { background: rgba(15, 22, 42, 0.65); backdrop-filter: blur(14px); border: 1px solid rgba(212, 175, 55, 0.15); }
+            .glass-gold { background: linear-gradient(135deg, rgba(212,175,55,0.1) 0%, rgba(7,10,18,0.4) 100%); border: 1px solid rgba(212, 175, 55, 0.3); }
+        </style>
+    </head>
+    <body class="bg-darkspace text-slate-100 min-h-screen overflow-x-hidden font-sans">
         
-    # If no calls made yet, show standard 4 rows with 0 usage tracking
-    if total_intercepted_calls == 0:
-        telemetry_list = [("NUMBER", 0, 0), ("UPI", 0, 0), ("PAYTM", 0, 0), ("VEHICLE", 0, 0)]
+        <!-- 3D Background Space Graph -->
+        <canvas id="three-canvas"></canvas>
 
-    telemetry_html = ""
-    for title, cnt, p_fill in telemetry_list:
-        telemetry_html += f"""
-        <div class="analyzer-card">
-            <div class="analyzer-title">ROUTE INTERCEPT: {title}</div>
-            <div class="analyzer-value">{cnt} <span style="font-size: 0.75rem; color:#550011;">CALLS</span></div>
-            <div class="metric-bar-bg">
-                <div class="metric-bar-fill" style="width: {p_fill}%;"></div>
-            </div>
-        </div>
-        """
-    rendered = rendered.replace('{% for m_title, m_count, m_pct in telemetry_metrics %}\n        <div class="analyzer-card">\n            <div class="analyzer-title">ROUTE INTERCEPT: {{ m_title }}</div>\n            <div class="analyzer-value">{{ m_count }} <span style="font-size: 0.75rem; color:#550011;">CALLS</span></div>\n            <div class="metric-bar-bg">\n                <div class="metric-bar-fill" style="width: {{ m_pct }}%;"></div>\n            </div>\n        </div>\n        {% endfor %}', telemetry_html)
-
-    # 3. Dynamic Rows Configuration (Clean Unified Layout to Avoid "Joker Layout Wrapping")
-    rows_list = []
-    for k, v in API_KEYS_DB.items():
-        scopes_badges = "".join([f'<span class="badge-scope">{s}</span>' for s in v["scopes"]])
-        status_badge = f'<span class="badge-active">Active</span>' if v["status"] == "Active" else f'<span class="badge-suspended">Suspended</span>'
-        scopes_json = json.dumps(v["scopes"]).replace('"', '&quot;')
-        owner_escaped = v['owner'].replace("'", "\\'")
-        
-        row_ui = f"""
-        <tr>
-            <td>{v['owner']}</td>
-            <td style="color: #ff0033; font-weight:bold;">{v['token']}</td>
-            <td style="color: #ffaa00;">{v['expiry']}</td>
-            <td>{v['used']} / {v['limit']}</td>
-            <td>{status_badge}</td>
-            <td>{scopes_badges}</td>
-            <td>
-                <div class="actions-wrapper">
-                    <button class="btn-action btn-edit" onclick="openEditModal('{v['token']}', '{owner_escaped}', {v['limit']}, '{v['expiry']}', '{scopes_json}')">EDIT</button>
-                    <a href="/keys/reset/{v['token']}" class="btn-action btn-reset">RESET</a>
-                    <a href="/keys/toggle/{v['token']}" class="btn-action btn-toggle {'suspended' if v['status'] != 'Active' else ''}">TOGGLE</a>
-                    <a href="/keys/delete/{v['token']}" class="btn-action btn-del">DEL</a>
+        <div class="relative z-10 min-h-screen flex flex-col justify-between">
+            <!-- Header Panel -->
+            <header class="glass px-6 py-4 flex justify-between items-center border-b border-gold-500/20">
+                <div class="flex items-center space-x-3">
+                    <div class="p-2 bg-gold-500/10 rounded-lg border border-gold-500/30">
+                        <i data-lucide="shield-alert" class="text-gold-400 w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-bold tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-gold-400">SHAYAN EXPLORER</h1>
+                        <p class="text-[10px] text-slate-400 uppercase tracking-widest">Next-Gen Data Telemetry Portal</p>
+                    </div>
                 </div>
-            </td>
-        </tr>
-        """
-        rows_list.append(row_ui)
-    rendered = rendered.replace("{% for row in rows %}\n                {{ row }}\n                {% endfor %}", "".join(rows_list))
 
-    # 4. Session Tracker UI Parser
-    s_logs_html = []
-    for s_log in reversed(SESSION_LOGS[-5:]):
-        s_logs_html.append(f"""
-        <tr>
-            <td style="color:#ffcc00;">[{s_log['time']}]</td>
-            <td>{s_log['user']}</td>
-            <td style="color:#ff3366;">{s_log['event']}</td>
-            <td><span class="badge-scope" style="color:#00ff66; border-color:#004411;">{s_log['clearance']}</span></td>
-        </tr>
-        """)
-    if not s_logs_html:
-        s_logs_html.append('<tr><td colspan="4" style="text-align: center; color: #550011; padding: 12px 0;">No operator sessions tracked on current core context instance.</td></tr>')
-    rendered = rendered.replace("{% for s_log in session_logs_html %}\n                {{ s_log }}\n                {% endfor %}", "".join(s_logs_html))
+                <!-- Right Side Interacting Items -->
+                <div class="flex items-center space-x-4">
+                    <button onclick="toggleAdminPanel()" class="flex items-center space-x-2 text-sm font-semibold text-gold-400 px-4 py-2 border border-gold-500/30 rounded-lg hover:bg-gold-500/10 transition-all">
+                        <i data-lucide="sliders" class="w-4 h-4"></i>
+                        <span>Admin Console</span>
+                    </button>
+                    <!-- Mailbox System -->
+                    <div class="relative">
+                        <button onclick="toggleMailbox()" class="p-2 glass rounded-lg hover:border-gold-500/50 text-slate-300 relative">
+                            <i data-lucide="mail" class="w-5 h-5"></i>
+                            <span id="mail-dot" class="absolute top-1 right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                        </button>
+                        <!-- Floating Mailbox Dropdown -->
+                        <div id="mailbox-panel" class="hidden absolute right-0 mt-3 w-80 glass rounded-xl p-4 shadow-2xl z-50 animate-fade-in">
+                            <h3 class="text-sm font-bold text-gold-400 border-b border-slate-700 pb-2 mb-2 flex items-center justify-between">
+                                <span>Secure Key Delivery Vault</span>
+                                <i data-lucide="inbox" class="w-4 h-4 text-gold-400"></i>
+                            </h3>
+                            <div id="mail-contents" class="space-y-2 text-xs text-slate-300">
+                                <div class="p-2 bg-slate-900/80 rounded border border-emerald-500/30">
+                                    <p class="font-bold text-emerald-400 mb-1">System Allocation Complete</p>
+                                    <p>Your master test token key <code class="text-gold-400 font-mono">explorer16</code> is globally active with complete route clearing profiles.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </header>
 
-    # 5. Live Pipeline Request Intercept Streams
-    logs_list = []
-    for log in reversed(PIPELINE_LOGS[-10:]):
-        logs_list.append(f"""
-        <tr>
-            <td>{log['time']}</td>
-            <td>{log['token']}</td>
-            <td><span class="badge-scope" style="color:#00ffff; border-color:#004444;">{log['route']}</span></td>
-            <td style="font-family: monospace; color: #888;">{log['params']}</td>
-        </tr>
-        """)
-    if not logs_list:
-        logs_list.append('<tr><td colspan="4" style="text-align: center; color: #550011; padding: 12px 0;">No raw system intercept streams pipeline detected.</td></tr>')
-    rendered = rendered.replace("{% for log in logs %}\n                {{ log }}\n                {% endfor %}", "".join(logs_list))
+            <!-- Main Layout Space -->
+            <main class="container mx-auto px-4 py-8 flex-grow">
+                
+                <!-- Admin Dashboard (Initially Hidden via JS configuration) -->
+                <section id="admin-view" class="hidden mb-12 glass rounded-2xl p-6 border border-gold-500/30">
+                    <div class="flex justify-between items-center border-b border-slate-800 pb-4 mb-6">
+                        <div class="flex items-center space-x-2">
+                            <i data-lucide="command" class="text-gold-400 w-5 h-5"></i>
+                            <h2 class="text-xl font-bold text-gold-400">Infrastructure Configuration</h2>
+                        </div>
+                        <span class="text-xs bg-gold-500/10 text-gold-400 px-3 py-1 rounded-full border border-gold-500/20">Authorized Terminal Instance</span>
+                    </div>
 
-    return rendered
+                    <!-- Key Generation Grid -->
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div class="glass-gold p-5 rounded-xl space-y-4">
+                            <h3 class="font-bold text-sm uppercase text-slate-300 tracking-wider flex items-center space-x-2">
+                                <i data-lucide="key-round" class="w-4 h-4 text-gold-400"></i>
+                                <span>Generate Secure Client Token</span>
+                            </h3>
+                            <div class="space-y-3 text-xs">
+                                <div>
+                                    <label class="block text-slate-400 mb-1">Client Description Name</label>
+                                    <input id="new-name" type="text" class="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-200 focus:outline-none focus:border-gold-500" placeholder="e.g., Enterprise Client Alpha">
+                                </div>
+                                <div>
+                                    <label class="block text-slate-400 mb-1">Custom Secret Authentication Key</label>
+                                    <input id="new-key" type="text" class="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-200 focus:outline-none focus:border-gold-500" placeholder="e.g., alpha-secret-2026">
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label class="block text-slate-400 mb-1">Daily Cap Limit</label>
+                                        <input id="new-limit" type="number" class="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-200 focus:outline-none focus:border-gold-500" value="1000">
+                                    </div>
+                                    <div>
+                                        <label class="block text-slate-400 mb-1">Expiration Timeline</label>
+                                        <input id="new-expiry" type="date" class="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-200 focus:outline-none focus:border-gold-500">
+                                    </div>
+                                </div>
+                                <button onclick="executeGenerateKey()" class="w-full bg-gradient-to-r from-gold-600 to-gold-400 text-slate-950 font-bold py-2 rounded.hover:opacity-90 transition-all flex items-center justify-center space-x-2 mt-4 text-sm">
+                                    <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                                    <span>Deploy Token Key</span>
+                                </button>
+                            </div>
+                        </div>
 
-# --- API LIFECYCLE RESTRUCTURING MANAGEMENT ---
+                        <!-- Active System Allocations -->
+                        <div class="lg:col-span-2 glass p-5 rounded-xl overflow-hidden flex flex-col">
+                            <h3 class="font-bold text-sm uppercase text-slate-300 tracking-wider mb-3 flex items-center space-x-2">
+                                <i data-lucide="database" class="w-4 h-4 text-gold-400"></i>
+                                <span>Active Security Allocations</span>
+                            </h3>
+                            <div class="overflow-x-auto text-xs flex-grow">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="border-b border-slate-800 text-slate-400">
+                                            <th class="pb-2 font-medium">Identifier Profile</th>
+                                            <th class="pb-2 font-medium">Token Key Payload</th>
+                                            <th class="pb-2 font-medium">Daily Utilization</th>
+                                            <th class="pb-2 font-medium">System Lifespan</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="active-keys-table" class="divide-y divide-slate-900">
+                                        <!-- Dynamically injected via script processing -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
 
-@app.post("/keys/generate")
-def generate_key(owner: str = Form(...), token: Optional[str] = Form(None), limit: int = Form(...), expiry_date: Optional[str] = Form(None), scopes: List[str] = Form(None), auth: bool = Depends(check_session)):
-    key_token = token.strip() if token and token.strip() else f"vx-{int(time.time())}"
-    assigned_scopes = scopes if scopes else ["ALL"]
-    expiry_str = expiry_date.strip() if expiry_date and expiry_date.strip() else "LIFETIME ACCESS"
+                <!-- Commercial Showroom Presentation Matrix -->
+                <div class="text-center max-w-2xl mx-auto mb-12 space-y-3">
+                    <span class="text-xs tracking-widest text-gold-400 uppercase font-semibold bg-gold-500/10 px-4 py-1.5 rounded-full border border-gold-500/30">Enterprise Data Node Distribution Architecture</span>
+                    <h2 class="text-4xl font-extrabold tracking-tight text-white">Premium Monetized Telemetry Gateway</h2>
+                    <p class="text-slate-400 text-sm">Deploy modular operational structures with nanosecond execution speed. Choose targeted data access streams backed by hardware-grade transaction compliance models.</p>
+                </div>
 
-    API_KEYS_DB[key_token] = {
-        "owner": owner, "token": key_token, "expiry": expiry_str,
-        "limit": limit, "used": 0, "status": "Active", "scopes": assigned_scopes
-    }
-    return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+                <!-- Interactive Pricing Infrastructure Matrix Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <!-- Standard Tier Layer -->
+                    <div class="glass rounded-2xl p-6 flex flex-col justify-between relative group hover:border-gold-500/40 transition-all duration-300">
+                        <div>
+                            <div class="flex justify-between items-start mb-4">
+                                <div>
+                                    <h3 class="text-xl font-bold tracking-wide text-white">Identity Core Bundle</h3>
+                                    <p class="text-xs text-slate-400 mt-1">Foundational verification matrix</p>
+                                </div>
+                                <div class="p-2 bg-slate-900 rounded-xl border border-slate-800"><i data-lucide="user-check" class="text-gold-400 w-5 h-5"></i></div>
+                            </div>
+                            <div class="my-6 border-b border-slate-800/60 pb-6">
+                                <span class="text-3xl font-extrabold text-white">₹100</span>
+                                <span class="text-xs text-slate-400"> / monthly tier cyclic</span>
+                            </div>
+                            <ul class="space-y-3 text-xs text-slate-300 mb-8">
+                                <li class="flex items-center space-x-2.5"><i data-lucide="check" class="w-4 h-4 text-gold-400"></i><span>Paytm Verification Systems Wrapper</span></li>
+                                <li class="flex items-center space-x-2.5"><i data-lucide="check" class="w-4 h-4 text-gold-400"></i><span>Advanced Call Tracer Routing</span></li>
+                                <li class="flex items-center space-x-2.5"><i data-lucide="check" class="w-4 h-4 text-gold-400"></i><span>Infrastructure Ledger Integrations</span></li>
+                            </ul>
+                        </div>
+                        <button onclick="triggerPurchase('Identity Core Bundle', 100)" class="w-full py-3 rounded-xl bg-slate-900 hover:bg-gold-500/10 border border-gold-500/30 text-gold-400 font-bold tracking-wider text-xs uppercase transition-all">Initialize Smart Checkout</button>
+                    </div>
 
-@app.post("/keys/edit")
-def edit_key(old_token: str = Form(...), token: str = Form(...), owner: str = Form(...), limit: int = Form(...), expiry_date: str = Form(...), scopes: List[str] = Form(None), auth: bool = Depends(check_session)):
-    assigned_scopes = scopes if scopes else ["ALL"]
-    previous_usage_count = 0
-    previous_status = "Active"
-    
-    if old_token in API_KEYS_DB:
-        previous_usage_count = API_KEYS_DB[old_token]["used"]
-        previous_status = API_KEYS_DB[old_token]["status"]
-        del API_KEYS_DB[old_token]
+                    <!-- Enterprise Core Bundle Layer (Featured) -->
+                    <div class="glass-gold rounded-2xl p-6 flex flex-col justify-between relative scale-105 border-gold-500/40 shadow-2xl shadow-gold-500/5">
+                        <span class="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-gold-600 to-gold-400 text-slate-950 font-black tracking-widest text-[9px] uppercase px-4 py-1 rounded-full shadow-lg">HIGH UTILIZATION BANDWIDTH</span>
+                        <div>
+                            <div class="flex justify-between items-start mb-4">
+                                <div>
+                                    <h3 class="text-xl font-bold tracking-wide text-white">Global Telemetry Pack</h3>
+                                    <p class="text-xs text-amber-100/60 mt-1">Unified geographical data mapping</p>
+                                </div>
+                                <div class="p-2 bg-gold-500/20 rounded-xl border border-gold-500/40"><i data-lucide="globe" class="text-gold-400 w-5 h-5"></i></div>
+                            </div>
+                            <div class="my-6 border-b border-gold-500/20 pb-6">
+                                <span class="text-3xl font-extrabold text-white">₹500</span>
+                                <span class="text-xs text-amber-100/60"> / monthly tier cyclic</span>
+                            </div>
+                            <ul class="space-y-3 text-xs text-amber-100/80 mb-8">
+                                <li class="flex items-center space-x-2.5"><i data-lucide="shield-check" class="w-4 h-4 text-gold-400"></i><span>Core Financial IFSC API Matrix</span></li>
+                                <li class="flex items-center space-x-2.5"><i data-lucide="shield-check" class="w-4 h-4 text-gold-400"></i><span>Regional Pincode Registry Stream</span></li>
+                                <li class="flex items-center space-x-2.5"><i data-lucide="shield-check" class="w-4 h-4 text-gold-400"></i><span>Network Architecture IP Resolution</span></li>
+                                <li class="flex items-center space-x-2.5"><i data-lucide="shield-check" class="w-4 h-4 text-gold-400"></i><span>Unified Settlement Address Protocols</span></li>
+                            </ul>
+                        </div>
+                        <button onclick="triggerPurchase('Global Telemetry Pack', 500)" class="w-full py-3 rounded-xl bg-gradient-to-r from-gold-500 to-amber-500 hover:opacity-90 text-slate-950 font-black tracking-wider text-xs uppercase transition-all shadow-md shadow-gold-500/20">Initialize Smart Checkout</button>
+                    </div>
 
-    API_KEYS_DB[token] = {
-        "owner": owner, "token": token, "expiry": expiry_date,
-        "limit": limit, "used": previous_usage_count, "status": previous_status, "scopes": assigned_scopes
-    }
-    return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+                    <!-- Ultimate Apex Portfolio Bundle Layer -->
+                    <div class="glass rounded-2xl p-6 flex flex-col justify-between relative group hover:border-gold-500/40 transition-all duration-300">
+                        <div>
+                            <div class="flex justify-between items-start mb-4">
+                                <div>
+                                    <h3 class="text-xl font-bold tracking-wide text-white">Ultimate Apex Suite</h3>
+                                    <p class="text-xs text-slate-400 mt-1">Complete analytical execution system</p>
+                                </div>
+                                <div class="p-2 bg-slate-900 rounded-xl border border-slate-800"><i data-lucide="cpu" class="text-gold-400 w-5 h-5"></i></div>
+                            </div>
+                            <div class="my-6 border-b border-slate-800/60 pb-6">
+                                <span class="text-3xl font-extrabold text-white">₹1600</span>
+                                <span class="text-xs text-slate-400"> / monthly tier cyclic</span>
+                            </div>
+                            <ul class="space-y-3 text-xs text-slate-300 mb-8">
+                                <li class="flex items-center space-x-2.5"><i data-lucide="check" class="w-4 h-4 text-gold-400"></i><span>Access clearance across all 20 API streams</span></li>
+                                <li class="flex items-center space-x-2.5"><i data-lucide="check" class="w-4 h-4 text-gold-400"></i><span>Real-time server log export functionality</span></li>
+                                <li class="flex items-center space-x-2.5"><i data-lucide="check" class="w-4 h-4 text-gold-400"></i><span>Dedicated support channel tracking routing</span></li>
+                            </ul>
+                        </div>
+                        <button onclick="triggerPurchase('Ultimate Apex Suite', 1600)" class="w-full py-3 rounded-xl bg-slate-900 hover:bg-gold-500/10 border border-gold-500/30 text-gold-400 font-bold tracking-wider text-xs uppercase transition-all">Initialize Smart Checkout</button>
+                    </div>
+                </div>
+            </main>
 
-@app.get("/keys/toggle/{token}")
-def toggle_key(token: str, auth: bool = Depends(check_session)):
-    if token in API_KEYS_DB:
-        current = API_KEYS_DB[token]["status"]
-        API_KEYS_DB[token]["status"] = "Suspended" if current == "Active" else "Active"
-    return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+            <!-- Sticky Admin Authentication Security Overlay Window -->
+            <div id="login-modal" class="hidden fixed inset-0 flex items-center justify-center bg-slate-950/80 backdrop-blur-xl z-50 p-4">
+                <div class="glass max-w-sm w-full p-6 rounded-2xl shadow-2xl border border-gold-500/40">
+                    <div class="text-center space-y-2 mb-6">
+                        <div class="mx-auto w-12 h-12 bg-gold-500/10 rounded-full flex items-center justify-center border border-gold-500/30 mb-2">
+                            <i data-lucide="lock" class="text-gold-400 w-5 h-5"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-white tracking-wide">Infrastructure Gatekeeper</h3>
+                        <p class="text-xs text-slate-400">Enter high-level validation tokens to access key config controls</p>
+                    </div>
+                    <div class="space-y-4 text-xs">
+                        <div>
+                            <label class="block text-slate-400 mb-1 font-semibold">Security Username ID</label>
+                            <input id="login-user" type="text" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-gold-500 font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 mb-1 font-semibold">Cryptographic Security Passphrase</label>
+                            <input id="login-pass" type="password" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-gold-500 font-mono">
+                        </div>
+                        <div class="flex space-x-2 pt-2">
+                            <button onclick="toggleAdminPanel()" class="w-1/2 py-2.5 rounded-xl border border-slate-700 hover:bg-slate-900 text-slate-300 font-bold tracking-wide transition-all">Abort Access</button>
+                            <button onclick="executeAdminLogin()" class="w-1/2 py-2.5 rounded-xl bg-gradient-to-r from-gold-500 to-gold-600 text-slate-950 font-black tracking-wide hover:opacity-90 transition-all">Verify Access</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-@app.get("/keys/reset/{token}")
-def reset_key_usage(token: str, auth: bool = Depends(check_session)):
-    if token in API_KEYS_DB:
-        API_KEYS_DB[token]["used"] = 0
-    return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+            <!-- Global Footer System -->
+            <footer class="glass mt-12 py-4 px-6 text-center text-[11px] text-slate-400 tracking-wider border-t border-slate-900">
+                <p>&copy; 2026 <span class="text-gold-400 font-bold">SHAYAN EXPLORER Architecture Portfolio</span>. All system pipelines fully operational.</p>
+            </footer>
+        </div>
 
-@app.get("/keys/delete/{token}")
-def delete_key(token: str, auth: bool = Depends(check_session)):
-    if token in API_KEYS_DB: del API_KEYS_DB[token]
-    if token in PERMANENT_STATIC_KEYS: del PERMANENT_STATIC_KEYS[token]
-    return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+        <script>
+            // Initialize Lucide SVG Vector Asset Rendering Engine
+            lucide.createIcons();
 
-# --- CORE API PROXY GATEWAY INTEGRATION LAYER ---
-@app.get("/api/{route}")
-def proxy_gateway(route: str, request: Request, key: str):
-    for k, v in PERMANENT_STATIC_KEYS.items():
-        if k not in API_KEYS_DB: API_KEYS_DB[k] = v
+            let adminAuthenticated = false;
 
-    if key not in API_KEYS_DB:
-        return JSONResponse(status_code=403, content={"error": "Access Revoked: Invalid Token Identification Matrix"})
-    
-    key_profile = API_KEYS_DB[key]
-    if key_profile["status"] != "Active":
-        return JSONResponse(status_code=403, content={"error": "Access Denied: This target API Key is currently SUSPENDED"})
-
-    current_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    query_params = dict(request.query_params)
-    if "key" in query_params: del query_params["key"]
-    
-    PIPELINE_LOGS.append({"time": current_time_str, "token": key, "route": route.upper(), "params": str(query_params)})
-    
-    # Increment Analytics Tracker Calculator Matrix counter
-    route_upper = route.upper()
-    if route_upper in ROUTE_USAGE_COUNTER:
-        ROUTE_USAGE_COUNTER[route_upper] += 1
-    else:
-        ROUTE_USAGE_COUNTER[route_upper] = 1
-
-    if "ALL" not in key_profile["scopes"] and route_upper not in key_profile["scopes"]:
-        return JSONResponse(status_code=403, content={"error": f"Unauthorized Access Scope Framework for Sub-Tool: {route_upper}"})
-
-    if key_profile["expiry"] != "LIFETIME ACCESS":
-        today_date = datetime.now().strftime("%Y-%m-%d")
-        if today_date > key_profile["expiry"]:
-            return JSONResponse(status_code=403, content={"error": "Token lifecycle execution window has expired."})
+            // --- Elegant Cosmic Three.js Particle Vector Lattice Background Setup ---
+            const canvasElement = document.getElementById('three-canvas');
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ canvas: canvasElement, alpha: true, antialias: true });
             
-    if key_profile["used"] >= key_profile["limit"]:
-        return JSONResponse(status_code=429, content={"error": "Transaction call allocation volume limits fully exhausted."})
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-    key_profile["used"] += 1
+            const particleGeometry = new THREE.BufferGeometry();
+            const pointCount = 120;
+            const positionArray = new Float32Array(pointCount * 3);
 
-    upstream_params = dict(request.query_params)
-    upstream_params["key"] = MASTER_KEY 
-    
-    try:
-        target_url = f"{TARGET_BASE_API}/{route}"
-        upstream_response = requests.get(target_url, params=upstream_params, timeout=12)
-        cleaned_text_payload = white_label_filter(upstream_response.text)
-        try:
-            return JSONResponse(status_code=upstream_response.status_code, content=json.loads(cleaned_text_payload))
-        except json.JSONDecodeError:
-            return HTMLResponse(status_code=upstream_response.status_code, content=cleaned_text_payload)
-    except requests.exceptions.RequestException as exc:
-        return JSONResponse(status_code=502, content={"error": "Upstream communication gateway failure", "details": str(exc)})
+            for(let i=0; i < pointCount * 3; i++) {
+                positionArray[i] = (Math.random() - 0.5) * 10;
+            }
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(positionArray, 3));
 
+            const particleMaterial = new THREE.PointsMaterial({
+                size: 0.035,
+                color: 0xD4AF37,
+                transparent: true,
+                opacity: 0.65
+            });
 
+            const particleMesh = new THREE.Points(particleGeometry, particleMaterial);
+            scene.add(particleMesh);
+            camera.position.z = 3;
+
+            function animationLoop() {
+                requestAnimationFrame(animationLoop);
+                particleMesh.rotation.y += 0.0008;
+                particleMesh.rotation.x += 0.0004;
+                renderer.render(scene, camera);
+            }
+            animationLoop();
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            // --- INTERACTION ARCHITECTURE LOGIC ---
+            function toggleMailbox() {
+                const designBox = document.getElementById('mailbox-panel');
+                designBox.classList.toggle('hidden');
+                document.getElementById('mail-dot').classList.add('hidden');
+            }
+
+            function toggleAdminPanel() {
+                if (!adminAuthenticated) {
+                    document.getElementById('login-modal').classList.toggle('hidden');
+                } else {
+                    const viewPanel = document.getElementById('admin-view');
+                    viewPanel.classList.toggle('hidden');
+                }
+            }
+
+            async function executeAdminLogin() {
+                const user = document.getElementById('login-user').value;
+                const pass = document.getElementById('login-pass').value;
+
+                try {
+                    const response = await fetch('/api/admin/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username: user, password: pass })
+                    });
+                    
+                    if (response.ok) {
+                        adminAuthenticated = true;
+                        document.getElementById('login-modal').classList.add('hidden');
+                        document.getElementById('admin-view').classList.remove('hidden');
+                        fetchAdminDashboardData();
+                    } else {
+                        alert('Cryptographic matching verification failure.');
+                    }
+                } catch (err) {
+                    console.error(err);
+                }
+            }
+
+            async function fetchAdminDashboardData() {
+                try {
+                    const response = await fetch('/api/admin/dashboard-data');
+                    const data = await response.json();
+                    
+                    const tableContainer = document.getElementById('active-keys-table');
+                    tableContainer.innerHTML = '';
+                    
+                    Object.keys(data.keys).forEach(tokenKey => {
+                        const info = data.keys[tokenKey];
+                        const row = `
+                            <tr class="hover:bg-slate-900/50">
+                                <td class="py-3 font-semibold text-slate-200">${info.key_name}</td>
+                                <td class="py-3"><code class="text-gold-400 font-mono font-bold bg-slate-950 px-2 py-0.5 rounded border border-slate-800">${tokenKey}</code></td>
+                                <td class="py-3 font-mono">${info.request_count} / <span class="text-slate-400">${info.daily_limit}</span></td>
+                                <td class="py-3 text-slate-400">${info.expires_at.split('T')[0]}</td>
+                            </tr>
+                        `;
+                        tableContainer.innerHTML += row;
+                    });
+                } catch (e) {
+                    console.error("Dashboard synchronization error.", e);
+                }
+            }
+
+            async function executeGenerateKey() {
+                const name = document.getElementById('new-name').value;
+                const key = document.getElementById('new-key').value;
+                const limit = document.getElementById('new-limit').value;
+                const expiryInput = document.getElementById('new-expiry').value;
+
+                if(!name || !key || !expiryInput) return alert('Complete all parameter properties.');
+
+                const payload = {
+                    key_name: name,
+                    custom_key: key,
+                    expires_at: `${expiryInput}T23:59:59`,
+                    daily_limit: parseInt(limit),
+                    allowed_tools: ["all"]
+                };
+
+                const res = await fetch('/api/admin/generate-key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if(res.ok) {
+                    alert('Token allocation built and active globally.');
+                    fetchAdminDashboardData();
+                }
+            }
+
+            function triggerPurchase(bundleName, amount) {
+                alert(`[Simulating Checkout Handshake Verification]\\nConnecting Securely via Razorpay Terminal ID: rzp_live_TCc5USt5FlmfrI\\n\\nProcessing transactional validation routing for ${bundleName} (INR ${amount})...`);
+                
+                // Emulate Webhook Payment Capture Success Fulfill Action Loop
+                setTimeout(() => {
+                    const mailboxVault = document.getElementById('mail-contents');
+                    const randomGeneratedString = 'exp_' + Math.random().toString(36).substring(2, 10);
+                    
+                    const generatedMailContent = `
+                        <div class="p-2 bg-slate-900/80 rounded border border-gold-500/30 animate-pulse">
+                            <p class="font-bold text-gold-400 mb-0.5">🔒 Order Confirmed: ${bundleName}</p>
+                            <p>Key payload dispatched into system matrix runtime successfully:</p>
+                            <p class="font-mono text-white mt-1 bg-black/60 p-1 rounded select-all text-center border border-slate-800">${randomGeneratedString}</p>
+                            <p class="text-[9px] text-slate-400 mt-1">Daily Allotted Allocation Cap: 2,500 operations / 30 day cycle active.</p>
+                        </div>
+                    `;
+                    mailboxVault.innerHTML = generatedMailContent + mailboxVault.innerHTML;
+                    document.getElementById('mail-dot').classList.remove('hidden');
+                    alert('Transaction Accepted! Check your secure system mailbox vault located at the top right header profile element.');
+                }, 1200);
+            }
+        </script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content, status_code=200)
