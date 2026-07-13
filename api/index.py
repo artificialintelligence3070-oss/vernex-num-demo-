@@ -3,15 +3,15 @@ import json
 import hashlib
 import random
 import string
-import datetime
 import requests
 import razorpay
 import sqlite3
 import pytz
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
+from flask import Flask, request, redirect, url_for, session, jsonify, flash, get_flashed_messages, render_template_string
 from functools import wraps
 from datetime import datetime, timedelta
 
+# ======================= INIT APP =======================
 app = Flask(__name__)
 app.secret_key = "shayan_explorer_secret_2026_vernex_ultimate"
 
@@ -148,6 +148,90 @@ def send_telegram(msg):
                 data={"chat_id": TELEGRAM_CHAT_ID, "text": msg, "parse_mode": "HTML"}, timeout=3)
         except: pass
 
+def render_page(title, content, show_nav=True):
+    """Render a full page with consistent design"""
+    user_name = session.get('name', session.get('user', ''))
+    
+    nav = ''
+    if show_nav and 'user' in session:
+        admin_link = ''
+        if session.get('user') == ADMIN_USERNAME:
+            admin_link = f'<li class="nav-item"><a class="nav-link text-danger" href="/admin"><i class="bi bi-shield-lock me-1"></i> Admin</a></li>'
+        
+        nav = f'''<nav class="navbar navbar-expand-lg navbar-dark fixed-top"><div class="container">
+        <a class="navbar-brand" href="/dashboard"><i class="bi bi-shield-shaded me-2"></i>VERNEX<span>API</span></a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button>
+        <div class="collapse navbar-collapse" id="nav"><ul class="navbar-nav ms-auto align-items-center gap-2">
+        <li class="nav-item"><a class="nav-link" href="/dashboard"><i class="bi bi-speedometer2 me-1"></i> Dashboard</a></li>
+        <li class="nav-item"><a class="nav-link" href="/pricing"><i class="bi bi-cart3 me-1"></i> Pricing</a></li>
+        <li class="nav-item"><a class="nav-link" href="/my-keys"><i class="bi bi-key me-1"></i> My Keys</a></li>
+        <li class="nav-item"><a class="nav-link" href="/mailbox"><i class="bi bi-envelope me-1"></i> Mailbox</a></li>
+        <li class="nav-item"><a class="nav-link" href="/logs"><i class="bi bi-clock-history me-1"></i> Logs</a></li>
+        {admin_link}
+        <li class="nav-item ms-2"><span class="text-muted small me-2"><i class="bi bi-person-circle me-1"></i>{user_name}</span>
+        <a href="/logout" class="btn btn-outline-glow btn-sm"><i class="bi bi-box-arrow-right"></i></a></li></ul></div></div></nav>'''
+    
+    flash_msgs = ''
+    for cat, msg in get_flashed_messages(with_categories=True):
+        cls_map = {'success':'alert-success','error':'alert-danger','info':'alert-info','warning':'alert-warning'}
+        flash_msgs += f'<div class="alert {cls_map.get(cat,"alert-info")} alert-dismissible fade show" role="alert">{msg}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>'
+    
+    particles = ''.join([f'<div class="particle" style="left:{random.randint(0,100)}%;animation-duration:{random.randint(15,35)}s;animation-delay:{random.randint(0,10)}s"></div>' for _ in range(20)])
+    
+    return f'''<!DOCTYPE html><html lang="en"><head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>{title} - VERNEX API</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Poppins:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+    <style>
+    *{{margin:0;padding:0;box-sizing:border-box}}
+    body{{font-family:'Poppins',sans-serif;background:#0a0a1a;color:#fff;overflow-x:hidden}}
+    #bg-canvas{{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none}}
+    .navbar{{background:rgba(10,10,30,0.95);backdrop-filter:blur(20px);border-bottom:1px solid rgba(0,255,255,0.1);z-index:1000}}
+    .navbar-brand{{font-family:'Orbitron',monospace;font-weight:900;font-size:1.5rem;background:linear-gradient(135deg,#00f5ff,#7b2ff7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}}
+    .navbar-brand span{{-webkit-text-fill-color:#fff;background:none}}
+    .nav-link{{color:rgba(255,255,255,0.7)!important;transition:all .3s}}
+    .nav-link:hover,.nav-link.active{{color:#00f5ff!important;text-shadow:0 0 20px rgba(0,245,255,0.5)}}
+    .content-wrapper{{position:relative;z-index:1;padding-top:80px;min-height:100vh}}
+    .glass-card{{background:rgba(255,255,255,0.03);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.05);border-radius:20px;padding:30px;transition:all .3s;animation:fadeInUp 0.6s ease-out}}
+    .glass-card:hover{{border-color:rgba(0,245,255,0.2);box-shadow:0 0 40px rgba(0,245,255,0.05);transform:translateY(-5px)}}
+    .section-title{{font-family:'Orbitron',monospace;font-weight:700;background:linear-gradient(135deg,#00f5ff,#7b2ff7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:30px}}
+    .btn-glow{{background:linear-gradient(135deg,#00f5ff,#7b2ff7);border:none;color:#fff;font-weight:600;padding:12px 30px;border-radius:50px;transition:all .3s;box-shadow:0 0 30px rgba(0,245,255,0.2)}}
+    .btn-glow:hover{{transform:translateY(-2px);box-shadow:0 0 50px rgba(0,245,255,0.4);color:#fff}}
+    .btn-outline-glow{{background:transparent;border:1px solid rgba(0,245,255,0.3);color:#00f5ff;font-weight:600;padding:10px 30px;border-radius:50px;transition:all .3s}}
+    .btn-outline-glow:hover{{background:rgba(0,245,255,0.1);color:#00f5ff}}
+    .table{{--bs-table-bg:transparent;color:#fff;border-color:rgba(255,255,255,0.05)}}
+    .table thead th{{background:rgba(0,245,255,0.05)!important;color:#00f5ff!important;font-weight:600;text-transform:uppercase;font-size:0.8rem;letter-spacing:1px}}
+    code{{background:rgba(0,245,255,0.1);color:#00f5ff;padding:4px 10px;border-radius:6px}} .form-control{{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff;border-radius:12px;padding:12px 15px}}
+    .form-control:focus{{border-color:#00f5ff;box-shadow:0 0 20px rgba(0,245,255,0.1)}
+    .form-select{{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff}}
+    .particle{{position:fixed;width:4px;height:4px;background:#00f5ff;border-radius:50%;pointer-events:none;animation:float linear infinite;opacity:0.3}}
+    @keyframes float{{0%{{transform:translateY(100vh) rotate(0deg);opacity:0}}10%{{opacity:0.5}}90%{{opacity:0.5}}100%{{transform:translateY(-100vh) rotate(720deg);opacity:0}}}}
+    @keyframes fadeInUp{{from{{opacity:0;transform:translateY(30px)}}to{{opacity:1;transform:translateY(0)}}}}
+    .badge-premium{{background:linear-gradient(135deg,#00f5ff,#7b2ff7);color:#fff;font-weight:600;padding:8px 16px;border-radius:50px}}
+    footer{{background:rgba(10,10,30,0.95);border-top:1px solid rgba(0,255,255,0.05);padding:20px 0;text-align:center;position:relative;z-index:1;color:rgba(255,255,255,0.4)}}
+    ::-webkit-scrollbar{{width:6px}}::-webkit-scrollbar-track{{background:#0a0a1a}}::-webkit-scrollbar-thumb{{background:linear-gradient(135deg,#00f5ff,#7b2ff7);border-radius:3px}}
+    .progress-bar{{background:linear-gradient(90deg,#00f5ff,#7b2ff7)!important}}
+    .input-group-text{{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#00f5ff;border-radius:12px 0 0 12px}}
+    </style></head><body>
+    <canvas id="bg-canvas"></canvas>
+    {particles}
+    {nav}
+    <div class="content-wrapper"><div class="container mt-4">
+    {flash_msgs}
+    {content}
+    </div></div>
+    <footer><div class="container"><p class="mb-0">© 2026 <strong>VERNEX API</strong> — Developed by <span style="color:#00f5ff">SHAYAN_EXPLORER</span>. All rights reserved.</p></div></footer>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    const c=document.getElementById('bg-canvas'),ctx=c.getContext('2d');c.width=innerWidth;c.height=innerHeight;
+    const ps=[];class P{{constructor(){{this.reset()}}reset(){{this.x=Math.random()*c.width;this.y=Math.random()*c.height;this.z=Math.random()*1000;this.size=Math.random()*2+0.5;this.speed=Math.random()*2+0.5;this.color=Math.random()>0.5?'#00f5ff':'#7b2ff7'}}
+    update(){{this.z-=this.speed;if(this.z<=0)this.reset()}}draw(){{const s=500/this.z,x=(this.x-c.width/2)*s+c.width/2,y=(this.y-c.height/2)*s+c.height/2,sz=this.size*s;if(x<0||x>c.width||y<0||y>c.height)return;const op=Math.min(1,(500-this.z)/500);ctx.beginPath();ctx.arc(x,y,sz,0,Math.PI*2);ctx.fillStyle=this.color;ctx.globalAlpha=op*0.4;ctx.fill();ctx.shadowBlur=20;ctx.shadowColor=this.color}}}
+    for(let i=0;i<80;i++)ps.push(new P());function a(){{ctx.clearRect(0,0,c.width,c.height);ps.forEach(p=>{{p.update();p.draw()}});requestAnimationFrame(a)}}a();
+    window.addEventListener('resize',()=>{{c.width=innerWidth;c.height=innerHeight}});
+    </script></body></html>'''
+
 # ======================= ROUTES =======================
 
 @app.route('/')
@@ -179,7 +263,21 @@ def login():
             flash('Login successful!','success')
             return redirect(url_for('dashboard'))
         flash('Invalid credentials!','error')
-    return render_template('login.html')
+    
+    content = f'''<div class="container py-5"><div class="row justify-content-center"><div class="col-md-5">
+    <div class="glass-card text-center">
+    <div class="mb-4"><i class="bi bi-shield-shaded" style="font-size:4rem;color:#00f5ff"></i></div>
+    <h2 class="section-title">Welcome Back</h2><p class="text-muted mb-4">Login to VERNEX API</p>
+    <form method="POST" action="/login">
+    <div class="mb-3"><div class="input-group"><span class="input-group-text"><i class="bi bi-person"></i></span>
+    <input type="text" name="email" class="form-control" placeholder="Email or Username" required></div></div>
+    <div class="mb-4"><div class="input-group"><span class="input-group-text"><i class="bi bi-lock"></i></span>
+    <input type="password" name="password" class="form-control" placeholder="Password" required></div></div>
+    <button type="submit" class="btn btn-glow w-100"><i class="bi bi-box-arrow-in-right me-2"></i> Login</button></form>
+    <p class="mt-4 text-muted">No account? <a href="/register" style="color:#00f5ff;text-decoration:none;">Register</a></p>
+    <p class="mt-2" style="font-size:0.8rem;color:rgba(255,255,255,0.3)">Developed by <span style="color:#00f5ff">SHAYAN_EXPLORER</span></p>
+    </div></div></div></div>'''
+    return render_page('Login', content, show_nav=False)
 
 @app.route('/register', methods=['GET','POST'])
 def register():
@@ -191,19 +289,34 @@ def register():
         name = request.form.get('name','').strip()
         if not email or not password:
             flash('Email and password required!','error')
-            return render_template('register.html')
+            return render_page('Register', '')
         conn = get_db()
         if conn.execute("SELECT id FROM users WHERE email=?",(email,)).fetchone():
             flash('Email already registered!','error')
             conn.close()
-            return render_template('register.html')
+            return render_page('Register', '')
         conn.execute("INSERT INTO users (email,password,name) VALUES (?,?,?)",
             (email,hashlib.sha256(password.encode()).hexdigest(),name or email.split('@')[0]))
         conn.commit()
         conn.close()
         flash('Registration successful! Please login.','success')
         return redirect(url_for('login'))
-    return render_template('register.html')
+    
+    content = f'''<div class="container py-5"><div class="row justify-content-center"><div class="col-md-5">
+    <div class="glass-card text-center">
+    <div class="mb-4"><i class="bi bi-person-plus-fill" style="font-size:4rem;color:#7b2ff7"></i></div>
+    <h2 class="section-title">Create Account</h2><p class="text-muted mb-4">Join VERNEX API Platform</p>
+    <form method="POST" action="/register">
+    <div class="mb-3"><div class="input-group"><span class="input-group-text"><i class="bi bi-person"></i></span>
+    <input type="text" name="name" class="form-control" placeholder="Full Name"></div></div>
+    <div class="mb-3"><div class="input-group"><span class="input-group-text"><i class="bi bi-envelope"></i></span>
+    <input type="email" name="email" class="form-control" placeholder="Email Address" required></div></div>
+    <div class="mb-4"><div class="input-group"><span class="input-group-text"><i class="bi bi-lock"></i></span>
+    <input type="password" name="password" class="form-control" placeholder="Password" required></div></div>
+    <button type="submit" class="btn btn-glow w-100"><i class="bi bi-person-plus me-2"></i> Register</button></form>
+    <p class="mt-4 text-muted">Already have an account? <a href="/login" style="color:#00f5ff;text-decoration:none;">Login</a></p>
+    </div></div></div></div>'''
+    return render_page('Register', content, show_nav=False)
 
 @app.route('/logout')
 def logout():
@@ -219,12 +332,101 @@ def dashboard():
     keys = conn.execute("SELECT * FROM api_keys WHERE user_email=? ORDER BY created_at DESC",(email,)).fetchall()
     logs = conn.execute("SELECT * FROM api_logs WHERE user_email=? ORDER BY timestamp DESC LIMIT 10",(email,)).fetchall()
     conn.close()
-    return render_template('dashboard.html', keys=keys, logs=logs, api_list=API_LIST, bundles=BUNDLES)
+    
+    total_req = sum(k['requests_made'] for k in keys)
+    
+    keys_html = ''
+    if keys:
+        rows = ''
+        for k in keys:
+            pct = round(k['requests_made']/max(k['total_limit'],1)*100)
+            expired = k['expires_at'] > datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
+            status_color = 'success' if expired else 'danger'
+            status_text = 'Active' if k['is_active'] else 'Inactive'
+            rows += f'''<tr>
+            <td><code>{k['key_name']}</code></td>
+            <td>{"🌐 All APIs" if k['all_apis'] else f'📌 {len(json.loads(k["api_names"]))} APIs'}</td>
+            <td><div class="d-flex align-items-center"><div class="progress flex-grow-1 me-2" style="height:6px;background:rgba(255,255,255,0.1)"><div class="progress-bar bg-info" style="width:{pct}%"></div></div><small>{k['requests_made']}/{k['total_limit']}</small></div></td>
+            <td><span class="text-{status_color}">{k['expires_at']}</span></td>
+            <td><span class="badge bg-{"success" if k['is_active'] else "danger"}">{status_text}</span></td></tr>'''
+        keys_html = f'''<div class="table-responsive"><table class="table table-dark table-hover">
+        <thead><tr><th>Key Name</th><th>APIs</th><th>Usage</th><th>Expires</th><th>Status</th></tr></thead><tbody>{rows}</tbody></table></div>'''
+    else:
+        keys_html = '<div class="text-center py-5"><i class="bi bi-key" style="font-size:3rem;color:rgba(255,255,255,0.1)"></i><p class="mt-2 text-muted">No API keys yet. <a href="/pricing" style="color:#00f5ff">Purchase your first key</a></p></div>'
+    
+    logs_html = ''
+    if logs:
+        lrows = ''
+        for l in logs:
+            bc = 'success' if l['response_code'] == 200 else 'danger'
+            lrows += f'<tr><td><small class="text-muted">{l["timestamp"]}</small></td><td>{l["api_called"]}</td><td><small>{l["query_param"]}</small></td><td><span class="badge bg-{bc}">{l["response_code"]}</span></td></tr>'
+        logs_html = f'''<div class="table-responsive"><table class="table table-dark table-sm"><thead><tr><th>Time</th><th>API</th><th>Query</th><th>Status</th></tr></thead><tbody>{lrows}</tbody></table></div>'''
+    else:
+        logs_html = '<p class="text-muted text-center py-3">No activity yet. Start using your API keys!</p>'
+    
+    content = f'''
+    <div class="glass-card mb-4"><div class="d-flex justify-content-between align-items-center">
+    <div><h2 class="section-title mb-1">Welcome, {session.get("name","User")}! 👋</h2>
+    <p class="text-muted mb-0">Manage your API keys, monitor usage, and purchase new plans</p></div>
+    <a href="/pricing" class="btn btn-glow"><i class="bi bi-cart-plus me-2"></i>Buy API Keys</a></div></div>
+    
+    <div class="row mb-4"><div class="col-md-4 mb-3"><div class="glass-card text-center">
+    <i class="bi bi-key" style="font-size:2.5rem;color:#00f5ff"></i><h3 class="mt-2">{len(keys)}</h3><p class="text-muted mb-0">Active Keys</p></div></div>
+    <div class="col-md-4 mb-3"><div class="glass-card text-center">
+    <i class="bi bi-arrow-repeat" style="font-size:2.5rem;color:#7b2ff7"></i><h3 class="mt-2">{len(logs)}</h3><p class="text-muted mb-0">Recent Requests</p></div></div>
+    <div class="col-md-4 mb-3"><div class="glass-card text-center">
+    <i class="bi bi-credit-card" style="font-size:2.5rem;color:#00ff88"></i><h3 class="mt-2">{total_req}</h3><p class="text-muted mb-0">Total API Calls</p></div></div></div>
+    
+    <div class="glass-card mb-4"><h3 class="section-title"><i class="bi bi-key me-2"></i>Your API Keys</h3>{keys_html}</div>
+    
+    <div class="glass-card"><h3 class="section-title"><i class="bi bi-clock-history me-2"></i>Recent Activity</h3>{logs_html}</div>'''
+    return render_page('Dashboard', content)
 
 @app.route('/pricing')
 @login_required
 def pricing():
-    return render_template('pricing.html', api_list=API_LIST, bundles=BUNDLES)
+    apis_html = ''
+    for aid, a in API_LIST.items():
+        buy_form = ''
+        if a['type'] == 'paid':
+            buy_form = f'''<form method="POST" action="/checkout">
+            <input type="hidden" name="package_type" value="single">
+            <input type="hidden" name="package_id" value="{aid}">
+            <select name="duration" class="form-select mb-2" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff">
+            <option value="monthly">Monthly - ₹{a['price_monthly']}</option>
+            <option value="3months">3 Months - ₹{a['price_3months']}</option></select>
+            <input type="text" name="key_name" class="form-control mb-2" placeholder="Custom Key Name (optional)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff">
+            <button type="submit" class="btn btn-glow w-100"><i class="bi bi-cart me-2"></i> Buy Now</button></form>'''
+        else:
+            buy_form = f'<p class="text-success"><i class="bi bi-unlock me-1"></i> Free — 5 requests/day</p><a href="/dashboard" class="btn btn-outline-glow w-100">Use Free API</a>'
+        
+        badge = f'<span class="badge bg-info">FREE</span>' if a['type'] == 'free' else ''
+        
+        apis_html += f'''<div class="col-md-4 mb-4"><div class="glass-card h-100">
+        <div class="d-flex justify-content-between align-items-start mb-3"><h5 class="mb-0">{a["name"]}</h5>{badge}</div>
+        {"".join([f'<p class="mb-1"><strong style="color:#00f5ff;font-size:1.5rem">₹{a["price_monthly"]}</strong> <span class="text-muted">/ month</span></p><p class="mb-0"><strong style="color:#7b2ff7">₹{a["price_3months"]}</strong> <span class="text-muted">/ 3 months</span></p>' if a['type']=='paid' else ''])}
+        {buy_form}</div></div>'''
+    
+    bundles_html = ''
+    for bid, b in BUNDLES.items():
+        border = 'rgba(255,215,0,0.3)' if bid == 'ultimate' else ('rgba(0,245,255,0.3)' if bid == 'pro' else 'rgba(0,255,100,0.3)')
+        best = '<span class="badge-premium mb-3">👑 BEST SELLER</span>' if bid == 'ultimate' else ''
+        bundles_html += f'''<div class="col-md-4 mb-4"><div class="glass-card h-100 text-center" style="border-color:{border}">
+        {best}<h3>{b["name"]}</h3>
+        <div class="my-4"><p class="mb-1"><strong style="color:#00f5ff;font-size:2rem">₹{b["price_monthly"]}</strong> <span class="text-muted">/ month</span></p>
+        <p><strong style="color:#7b2ff7;font-size:1.5rem">₹{b["price_3months"]}</strong> <span class="text-muted">/ 3 months</span></p></div>
+        <form method="POST" action="/checkout"><input type="hidden" name="package_type" value="bundle"><input type="hidden" name="package_id" value="{bid}">
+        <select name="duration" class="form-select mb-2" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff">
+        <option value="monthly">Monthly - ₹{b["price_monthly"]}</option><option value="3months">3 Months - ₹{b["price_3months"]}</option></select>
+        <input type="text" name="key_name" class="form-control mb-2" placeholder="Custom Key Name" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff">
+        <button type="submit" class="btn btn-glow w-100">Buy Bundle</button></form></div></div>'''
+    
+    content = f'''
+    <div class="text-center mb-5"><h1 class="section-title" style="font-size:3rem">💎 API PRICING</h1><p class="text-muted">Choose the perfect plan for your needs</p></div>
+    <h3 class="section-title mb-4">📌 Individual APIs</h3><div class="row">{apis_html}</div>
+    <h3 class="section-title mb-4 mt-5">🔥 BUNDLE DEALS</h3><div class="row">{bundles_html}</div>
+    <div class="glass-card mt-4 text-center"><h5><i class="bi bi-unlock me-2" style="color:#00ff88"></i> FREE APIs</h5><p class="text-muted">Instagram • GitHub • Telegram Username→Num • Telegram ID Info — <strong>5 requests/day free</strong></p></div>'''
+    return render_page('Pricing', content)
 
 @app.route('/checkout', methods=['GET','POST'])
 @login_required
@@ -259,8 +461,41 @@ def checkout():
                 (order['id'], session.get('email'), f"{ptype}_{pid}", amount, 'INR', kname))
             conn.commit()
             conn.close()
-            return render_template('checkout.html', order=order, razorpay_key=RAZORPAY_KEY_ID,
-                amount=amount, key_name=kname, duration=dur, package_id=pid, package_type=ptype)
+            
+            content = f'''<div class="container py-5"><div class="row justify-content-center"><div class="col-md-6">
+            <div class="glass-card text-center">
+            <i class="bi bi-credit-card" style="font-size:4rem;color:#00f5ff;margin-bottom:20px"></i>
+            <h2 class="section-title">Complete Payment</h2>
+            <div class="mb-4"><p class="mb-1"><strong>Package:</strong> {pid} ({dur})</p>
+            <p class="mb-1"><strong>Key Name:</strong> <code style="background:rgba(0,245,255,0.1);color:#00f5ff;padding:4px 8px;border-radius:5px">{kname}</code></p>
+            <p><strong style="font-size:2rem;color:#00f5ff">₹{amount}</strong></p></div>
+            <button id="pay-btn" class="btn btn-glow btn-lg w-100"><i class="bi bi-credit-card me-2"></i> Pay ₹{amount}</button>
+            <p class="mt-3 text-muted small"><i class="bi bi-shield-check me-1"></i> Secured by Razorpay</p></div></div></div></div>
+            
+            <form id="pay-form" method="POST" action="/payment-success">
+            <input type="hidden" name="razorpay_payment_id" id="rp_pid">
+            <input type="hidden" name="razorpay_order_id" id="rp_oid">
+            <input type="hidden" name="razorpay_signature" id="rp_sig">
+            <input type="hidden" name="key_name" value="{kname}">
+            <input type="hidden" name="package_id" value="{pid}">
+            <input type="hidden" name="package_type" value="{ptype}">
+            <input type="hidden" name="duration" value="{dur}">
+            </form>
+            
+            <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+            <script>
+            document.getElementById('pay-btn').onclick = function(e){{e.preventDefault();
+            var opts={{"key":"{RAZORPAY_KEY_ID}","amount":"{order['amount']}","currency":"{order['currency']}",
+            "name":"VERNEX API","description":"{pid} - {dur}","order_id":"{order['id']}",
+            "handler":function(r){{document.getElementById('rp_pid').value=r.razorpay_payment_id;
+            document.getElementById('rp_oid').value=r.razorpay_order_id;
+            document.getElementById('rp_sig').value=r.razorpay_signature;
+            document.getElementById('pay-form').submit()}},
+            "prefill":{{"name":"{session.get('name','')}","email":"{session.get('email','')}"}},
+            "theme":{{"color":"#00f5ff"}}}};
+            var rzp=new Razorpay(opts);rzp.open()}};
+            </script>'''
+            return render_page('Checkout', content)
         except Exception as e:
             flash(f'Payment error: {str(e)}','error')
             return redirect(url_for('pricing'))
@@ -325,7 +560,35 @@ def mykeys():
     conn = get_db()
     keys = conn.execute("SELECT * FROM api_keys WHERE user_email=? ORDER BY created_at DESC",(email,)).fetchall()
     conn.close()
-    return render_template('mykeys.html', keys=keys)
+    
+    if keys:
+        cards = ''
+        for k in keys:
+            pct = round(k['requests_made']/max(k['total_limit'],1)*100)
+            expired = k['expires_at'] > datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
+            status = 'Active' if k['is_active'] else 'Inactive'
+            sc = 'success' if k['is_active'] else 'danger'
+            ec = 'text-success' if expired else 'text-danger'
+            cards += f'''<div class="col-md-6 mb-4"><div class="glass-card">
+            <div class="d-flex justify-content-between align-items-start mb-3">
+            <div><h5 class="mb-1"><code style="background:rgba(0,245,255,0.1);color:#00f5ff;padding:6px 12px;border-radius:8px;font-size:1.1rem">{k['key_name']}</code></h5>
+            <small class="text-muted">Created: {k['created_at']}</small></div>
+            <span class="badge bg-{sc}">{status}</span></div>
+            <div class="mb-3"><small class="text-muted">Access:</small><p class="mb-0">{"🌐 All APIs" if k['all_apis'] else "📌 Selected APIs"}</p></div>
+            <div class="mb-3"><div class="d-flex justify-content-between mb-1"><small class="text-muted">Usage</small><small>{k['requests_made']} / {k['total_limit']}</small></div>
+            <div class="progress" style="height:8px;background:rgba(255,255,255,0.1)"><div class="progress-bar bg-info" style="width:{pct}%"></div></div></div>
+            <div class="d-flex justify-content-between"><div><small class="text-muted">Daily Limit:</small> <span class="text-info">{k['daily_limit']}</span></div>
+            <div><small class="text-muted">Expires:</small> <span class="{ec}">{k['expires_at']}</span></div></div>
+            <hr style="border-color:rgba(255,255,255,0.05)">
+            <button class="btn btn-outline-glow btn-sm w-100" onclick="navigator.clipboard.writeText('{k['key_name']}').then(()=>alert('Copied!'))">
+            <i class="bi bi-clipboard me-1"></i> Copy Key</button></div></div>'''
+        
+        content = f'<h2 class="section-title"><i class="bi bi-key me-2"></i>My API Keys</h2><div class="row">{cards}</div>'
+    else:
+        content = f'''<div class="glass-card text-center py-5"><i class="bi bi-key" style="font-size:4rem;color:rgba(255,255,255,0.1)"></i>
+        <h4 class="mt-3">No API Keys Yet</h4><p class="text-muted">Purchase your first API key to get started</p>
+        <a href="/pricing" class="btn btn-glow mt-2"><i class="bi bi-cart me-2"></i> Browse Plans</a></div>'''
+    return render_page('My Keys', content)
 
 @app.route('/logs')
 @login_required
@@ -334,7 +597,18 @@ def logs():
     conn = get_db()
     logs = conn.execute("SELECT * FROM api_logs WHERE user_email=? ORDER BY timestamp DESC LIMIT 100",(email,)).fetchall()
     conn.close()
-    return render_template('logs.html', logs=logs)
+    
+    if logs:
+        rows = ''
+        for i, l in enumerate(logs):
+            bc = 'success' if l['response_code'] == 200 else 'danger'
+            rows += f'<tr><td>{i+1}</td><td><small class="text-muted">{l["timestamp"]}</small></td><td><code style="font-size:0.8rem">{l["key_name"][:8]}...</code></td><td>{l["api_called"]}</td><td><small>{l["query_param"]}</small></td><td><span class="badge bg-{bc}">{l["response_code"]}</span></td><td><small class="text-muted">{l["ip_address"]}</small></td></tr>'
+        content = f'''<div class="glass-card"><div class="table-responsive"><table class="table table-dark" style="border-color:rgba(255,255,255,0.05)">
+        <thead><tr><th>#</th><th>Timestamp</th><th>Key</th><th>API</th><th>Query</th><th>Status</th><th>IP</th></tr></thead><tbody>{rows}</tbody></table></div></div>'''
+    else:
+        content = f'''<div class="glass-card text-center py-5"><i class="bi bi-clock" style="font-size:4rem;color:rgba(255,255,255,0.1)"></i>
+        <h4 class="mt-3">No Logs Yet</h4><p class="text-muted">Activity will appear here when you use your API keys</p></div>'''
+    return render_page('Activity Logs', content)
 
 @app.route('/mailbox')
 @login_required
@@ -343,7 +617,27 @@ def mailbox():
     conn = get_db()
     keys = conn.execute("SELECT * FROM api_keys WHERE user_email=? ORDER BY created_at DESC",(email,)).fetchall()
     conn.close()
-    return render_template('mailbox.html', keys=keys)
+    
+    if keys:
+        cards = ''
+        for k in keys:
+            expired = k['expires_at'] > datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
+            ec = 'text-success' if expired else 'text-danger'
+            cards += f'''<div class="col-md-6 mb-4"><div class="glass-card">
+            <div class="d-flex justify-content-between mb-2"><span class="badge-premium"><i class="bi bi-key me-1"></i> {k['key_name']}</span>
+            <span class="{"text-success" if k['is_active'] else "text-danger"}"><i class="bi {"bi-check-circle" if k['is_active'] else "bi-x-circle"}"></i> {"Active" if k['is_active'] else "Inactive"}</span></div>
+            <hr style="border-color:rgba(255,255,255,0.05)">
+            <div class="row text-center"><div class="col-4"><small class="text-muted d-block">Requests</small><strong style="color:#00f5ff">{k['requests_made']}</strong></div>
+            <div class="col-4"><small class="text-muted d-block">Limit</small><strong style="color:#7b2ff7">{k['total_limit']}</strong></div>
+            <div class="col-4"><small class="text-muted d-block">Expires</small><strong class="{ec}" style="font-size:0.85rem">{k['expires_at'][:10]}</strong></div></div>
+            <div class="mt-3"><button class="btn btn-outline-glow btn-sm w-100" onclick="navigator.clipboard.writeText('{k['key_name']}').then(()=>alert('Copied!'))">
+            <i class="bi bi-clipboard me-1"></i> Copy Key</button></div></div></div>'''
+        content = f'<h2 class="section-title"><i class="bi bi-envelope me-2"></i>Key Mailbox</h2><p class="text-muted mb-4">Your purchased API keys and their details</p><div class="row">{cards}</div>'
+    else:
+        content = f'''<div class="glass-card text-center py-5"><i class="bi bi-inbox" style="font-size:4rem;color:rgba(255,255,255,0.1)"></i>
+        <h4 class="mt-3">Mailbox Empty</h4><p class="text-muted">No keys found. Purchase an API plan to receive your keys here.</p>
+        <a href="/pricing" class="btn btn-glow mt-2"><i class="bi bi-cart me-2"></i> Browse Plans</a></div>'''
+    return render_page('Mailbox', content)
 
 @app.route('/api/v1/<api_name>', methods=['GET'])
 def api_gateway(api_name):
@@ -406,7 +700,7 @@ def admin_dashboard():
     conn = get_db()
     users = conn.execute("SELECT * FROM users ORDER BY created_at DESC").fetchall()
     keys = conn.execute("SELECT * FROM api_keys ORDER BY created_at DESC").fetchall()
-    logs = conn.execute("SELECT * FROM api_logs ORDER BY timestamp DESC LIMIT 50").fetchall()
+    klogs = conn.execute("SELECT * FROM api_logs ORDER BY timestamp DESC LIMIT 50").fetchall()
     orders = conn.execute("SELECT * FROM orders ORDER BY created_at DESC").fetchall()
     payments = conn.execute("SELECT * FROM payments ORDER BY timestamp DESC LIMIT 20").fetchall()
     stats = {
@@ -417,7 +711,49 @@ def admin_dashboard():
         'total_revenue': conn.execute("SELECT SUM(amount) as s FROM orders WHERE status='completed'").fetchone()['s'] or 0,
     }
     conn.close()
-    return render_template('admin.html', users=users, keys=keys, logs=logs, orders=orders, payments=payments, stats=stats, api_list=API_LIST)
+    
+    api_opts = ''.join([f'<option value="{aid}">{a["name"]}</option>' for aid, a in API_LIST.items()])
+    
+    key_rows = ''
+    for k in keys:
+        key_rows += f'''<tr><td><small>{k['key_name'][:12]}...</small></td><td><small>{k['user_email'][:15]}...</small></td>
+        <td><small>{"All" if k['all_apis'] else k['api_names'][:20]}</small></td><td>{k['requests_made']}</td><td>{k['total_limit']}</td>
+        <td><small>{k['expires_at'][:10]}</small></td>
+        <td><a href="/admin/toggle/{k['key_name']}" class="btn btn-sm {"btn-success" if k['is_active'] else "btn-secondary"}">{"Active" if k['is_active'] else "Inactive"}</a></td>
+        <td><a href="/admin/delete/{k['key_name']}" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')"><i class="bi bi-trash"></i></a></td></tr>'''
+    
+    order_rows = ''
+    for o in orders:
+        bs = 'success' if o['status'] == 'completed' else 'warning'
+        order_rows += f'<tr><td><small>{o["order_id"][:12]}...</small></td><td><small>{o["user_email"][:15]}...</small></td><td><small>{o["package_name"]}</small></td><td>₹{o["amount"]}</td><td><span class="badge bg-{bs}">{o["status"]}</span></td><td><small>{o["created_at"][:10]}</small></td></tr>'''
+    
+    content = f'''
+    <h2 class="section-title"><i class="bi bi-shield-lock me-2"></i>Admin Panel</h2>
+    <div class="row mb-4">
+    <div class="col-md-2 mb-3"><div class="glass-card text-center"><h3>{stats['total_users']}</h3><small class="text-muted">Users</small></div></div>
+    <div class="col-md-2 mb-3"><div class="glass-card text-center"><h3>{stats['total_keys']}</h3><small class="text-muted">Total Keys</small></div></div>
+    <div class="col-md-2 mb-3"><div class="glass-card text-center"><h3>{stats['active_keys']}</h3><small class="text-muted">Active</small></div></div>
+    <div class="col-md-2 mb-3"><div class="glass-card text-center"><h3>{stats['total_requests']}</h3><small class="text-muted">Requests</small></div></div>
+    <div class="col-md-2 mb-3"><div class="glass-card text-center"><h3 style="color:#00ff88">₹{stats['total_revenue']}</h3><small class="text-muted">Revenue</small></div></div>
+    <div class="col-md-2 mb-3"><div class="glass-card text-center"><h3>{len(payments)}</h3><small class="text-muted">Payments</small></div></div></div>
+    
+    <div class="glass-card mb-4"><h4><i class="bi bi-plus-circle me-2" style="color:#00f5ff"></i>Create New API Key</h4>
+    <form method="POST" action="/admin/create-key" class="row g-3">
+    <div class="col-md-3"><input type="text" name="key_name" class="form-control" placeholder="Key Name (auto)"></div>
+    <div class="col-md-3"><input type="email" name="user_email" class="form-control" placeholder="User Email" required></div>
+    <div class="col-md-2"><select name="api_names" class="form-select" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff"><option value="all">All APIs</option>{api_opts}</select></div>
+    <div class="col-md-2"><input type="number" name="daily_limit" class="form-control" placeholder="Daily Limit" value="1000"></div>
+    <div class="col-md-2"><input type="datetime-local" name="expires_at" class="form-control" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff"></div>
+    <div class="col-12"><button type="submit" class="btn btn-glow"><i class="bi bi-key me-1"></i> Generate Key</button></div></form></div>
+    
+    <div class="glass-card mb-4"><h4><i class="bi bi-key me-2" style="color:#7b2ff7"></i>All API Keys</h4>
+    <div class="table-responsive"><table class="table table-dark table-sm">
+    <thead><tr><th>Key</th><th>User</th><th>APIs</th><th>Used</th><th>Total</th><th>Expires</th><th>Status</th><th>Actions</th></tr></thead><tbody>{key_rows}</tbody></table></div></div>
+    
+    <div class="glass-card mb-4"><h4><i class="bi bi-cart me-2" style="color:#00ff88"></i>Recent Orders</h4>
+    <div class="table-responsive"><table class="table table-dark table-sm">
+    <thead><tr><th>Order ID</th><th>User</th><th>Package</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>{order_rows}</tbody></table></div></div>'''
+    return render_page('Admin', content)
 
 @app.route('/admin/create-key', methods=['POST'])
 @login_required
@@ -448,7 +784,7 @@ def admin_create_key():
         conn.close()
     return redirect(url_for('admin_dashboard'))
 
-@app.route('/admin/toggle-key/<key_name>')
+@app.route('/admin/toggle/<key_name>')
 @login_required
 def admin_toggle_key(key_name):
     if session.get('user') != ADMIN_USERNAME:
@@ -463,7 +799,7 @@ def admin_toggle_key(key_name):
     conn.close()
     return redirect(url_for('admin_dashboard'))
 
-@app.route('/admin/delete-key/<key_name>')
+@app.route('/admin/delete/<key_name>')
 @login_required
 def admin_delete_key(key_name):
     if session.get('user') != ADMIN_USERNAME:
@@ -479,95 +815,6 @@ def admin_delete_key(key_name):
 def health():
     return jsonify({"status":"ok","developer":"SHAYAN_EXPLORER","version":"2.0.0"})
 
-# ======================= TEMPLATES (inline) =======================
-
-@app.route('/templates/<name>')
-def serve_template(name):
-    templates = {
-        'login.html': '''<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Login - VERNEX API</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css"><link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Poppins:wght@300;400;600;700;900&display=swap" rel="stylesheet"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Poppins',sans-serif;background:#0a0a1a;color:#fff;overflow-x:hidden;min-height:100vh;display:flex;align-items:center;justify-content:center}#bg-canvas{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none}.glass-card{background:rgba(255,255,255,0.03);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.05);border-radius:20px;padding:40px;transition:all .3s;position:relative;z-index:1;width:100%;max-width:450px}.glass-card:hover{border-color:rgba(0,245,255,0.2);box-shadow:0 0 40px rgba(0,245,255,0.05)}.section-title{font-family:'Orbitron',monospace;font-weight:700;background:linear-gradient(135deg,#00f5ff,#7b2ff7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}.btn-glow{background:linear-gradient(135deg,#00f5ff,#7b2ff7);border:none;color:#fff;font-weight:600;padding:12px 30px;border-radius:50px;transition:all .3s;box-shadow:0 0 30px rgba(0,245,255,0.2)}.btn-glow:hover{transform:translateY(-2px);box-shadow:0 0 50px rgba(0,245,255,0.4);color:#fff}.form-control{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff;border-radius:12px;padding:12px 15px}.form-control:focus{border-color:#00f5ff;box-shadow:0 0 20px rgba(0,245,255,0.1)}.input-group-text{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#00f5ff;border-radius:12px 0 0 12px}.particle{position:fixed;width:4px;height:4px;background:#00f5ff;border-radius:50%;pointer-events:none;animation:float linear infinite;opacity:0.3}@keyframes float{0%{transform:translateY(100vh) rotate(0deg);opacity:0}10%{opacity:0.5}90%{opacity:0.5}100%{transform:translateY(-100vh) rotate(720deg);opacity:0}}</style></head><body><canvas id="bg-canvas"></canvas>''' + ''.join([f'<div class="particle" style="left:{random.randint(0,100)}%;animation-duration:{random.randint(15,35)}s;animation-delay:{random.randint(0,10)}s;width:{random.randint(2,6)}px;height:{random.randint(2,6)}px"></div>' for _ in range(20)]) + '''
-<div class="container"><div class="row justify-content-center"><div class="col-md-5">
-<div class="glass-card text-center"><div class="mb-4"><i class="bi bi-shield-shaded" style="font-size:4rem;color:#00f5ff"></i></div>
-<h2 class="section-title">Welcome Back</h2><p class="text-muted mb-4">Login to VERNEX API</p>
-<form method="POST" action="/login"><div class="mb-3"><div class="input-group"><span class="input-group-text"><i class="bi bi-person"></i></span>
-<input type="text" name="email" class="form-control" placeholder="Email or Username" required></div></div>
-<div class="mb-4"><div class="input-group"><span class="input-group-text"><i class="bi bi-lock"></i></span>
-<input type="password" name="password" class="form-control" placeholder="Password" required></div></div>
-<button type="submit" class="btn btn-glow w-100"><i class="bi bi-box-arrow-in-right me-2"></i> Login</button></form>
-<p class="mt-4 text-muted">No account? <a href="/register" style="color:#00f5ff;text-decoration:none;">Register</a></p>
-<p class="mt-2" style="font-size:0.8rem;color:rgba(255,255,255,0.3)">Developed by <span style="color:#00f5ff">SHAYAN_EXPLORER</span></p></div></div></div></div>
-<script>const c=document.getElementById('bg-canvas'),ctx=c.getContext('2d');c.width=innerWidth;c.height=innerHeight;
-const ps=[];class P{constructor(){this.reset()}reset(){this.x=Math.random()*c.width;this.y=Math.random()*c.height;this.z=Math.random()*1000;this.size=Math.random()*2+0.5;this.speed=Math.random()*2+0.5;this.color=Math.random()>0.5?'#00f5ff':'#7b2ff7'}
-update(){this.z-=this.speed;if(this.z<=0)this.reset()}draw(){const s=500/this.z,x=(this.x-c.width/2)*s+c.width/2,y=(this.y-c.height/2)*s+c.height/2,sz=this.size*s;if(x<0||x>c.width||y<0||y>c.height)return;const op=Math.min(1,(500-this.z)/500);ctx.beginPath();ctx.arc(x,y,sz,0,Math.PI*2);ctx.fillStyle=this.color;ctx.globalAlpha=op*0.4;ctx.fill();ctx.shadowBlur=20;ctx.shadowColor=this.color}}
-for(let i=0;i<80;i++)ps.push(new P());function a(){ctx.clearRect(0,0,c.width,c.height);ps.forEach(p=>{p.update();p.draw()});requestAnimationFrame(a)}a();
-window.addEventListener('resize',()=>{c.width=innerWidth;c.height=innerHeight});</script></body></html>''',
-
-        'register.html': '''<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Register - VERNEX API</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css"><link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Poppins:wght@300;400;600;700;900&display=swap" rel="stylesheet"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Poppins',sans-serif;background:#0a0a1a;color:#fff;overflow-x:hidden;min-height:100vh;display:flex;align-items:center;justify-content:center}#bg-canvas{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none}.glass-card{background:rgba(255,255,255,0.03);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.05);border-radius:20px;padding:40px;transition:all .3s;position:relative;z-index:1;width:100%;max-width:450px}.section-title{font-family:'Orbitron',monospace;font-weight:700;background:linear-gradient(135deg,#00f5ff,#7b2ff7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}.btn-glow{background:linear-gradient(135deg,#00f5ff,#7b2ff7);border:none;color:#fff;font-weight:600;padding:12px 30px;border-radius:50px;transition:all .3s;box-shadow:0 0 30px rgba(0,245,255,0.2)}.btn-glow:hover{transform:translateY(-2px);box-shadow:0 0 50px rgba(0,245,255,0.4);color:#fff}.form-control{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff;border-radius:12px;padding:12px 15px}.form-control:focus{border-color:#00f5ff;box-shadow:0 0 20px rgba(0,245,255,0.1)}.input-group-text{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#7b2ff7;border-radius:12px 0 0 12px}</style></head><body><canvas id="bg-canvas"></canvas>
-<div class="container"><div class="row justify-content-center"><div class="col-md-5">
-<div class="glass-card text-center"><div class="mb-4"><i class="bi bi-person-plus-fill" style="font-size:4rem;color:#7b2ff7"></i></div>
-<h2 class="section-title">Create Account</h2><p class="text-muted mb-4">Join VERNEX API Platform</p>
-<form method="POST" action="/register"><div class="mb-3"><div class="input-group"><span class="input-group-text"><i class="bi bi-person"></i></span>
-<input type="text" name="name" class="form-control" placeholder="Full Name"></div></div>
-<div class="mb-3"><div class="input-group"><span class="input-group-text"><i class="bi bi-envelope"></i></span>
-<input type="email" name="email" class="form-control" placeholder="Email Address" required></div></div>
-<div class="mb-4"><div class="input-group"><span class="input-group-text"><i class="bi bi-lock"></i></span>
-<input type="password" name="password" class="form-control" placeholder="Password" required></div></div>
-<button type="submit" class="btn btn-glow w-100"><i class="bi bi-person-plus me-2"></i> Register</button></form>
-<p class="mt-4 text-muted">Already have an account? <a href="/login" style="color:#00f5ff;text-decoration:none;">Login</a></p></div></div></div></div></body></html>''',
-
-        'dashboard.html': f'''<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard - VERNEX API</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css"><link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Poppins:wght@300;400;600;700;900&display=swap" rel="stylesheet"><style>*{{margin:0;padding:0;box-sizing:border-box}}body{{font-family:'Poppins',sans-serif;background:#0a0a1a;color:#fff;overflow-x:hidden}}#bg-canvas{{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none}}.navbar{{background:rgba(10,10,30,0.95);backdrop-filter:blur(20px);border-bottom:1px solid rgba(0,255,255,0.1);z-index:1000}}.navbar-brand{{font-family:'Orbitron',monospace;font-weight:900;font-size:1.5rem;background:linear-gradient(135deg,#00f5ff,#7b2ff7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}}.navbar-brand span{{-webkit-text-fill-color:#fff;background:none}}.nav-link{{color:rgba(255,255,255,0.7)!important;transition:all .3s}}.nav-link:hover,.nav-link.active{{color:#00f5ff!important;text-shadow:0 0 20px rgba(0,245,255,0.5)}}.content-wrapper{{position:relative;z-index:1;padding-top:80px;min-height:100vh}}.glass-card{{background:rgba(255,255,255,0.03);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.05);border-radius:20px;padding:30px;transition:all .3s}}.glass-card:hover{{border-color:rgba(0,245,255,0.2);box-shadow:0 0 40px rgba(0,245,255,0.05);transform:translateY(-5px)}}.section-title{{font-family:'Orbitron',monospace;font-weight:700;background:linear-gradient(135deg,#00f5ff,#7b2ff7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}}.btn-glow{{background:linear-gradient(135deg,#00f5ff,#7b2ff7);border:none;color:#fff;font-weight:600;padding:10px 30px;border-radius:50px;transition:all .3s;box-shadow:0 0 30px rgba(0,245,255,0.2)}}.btn-glow:hover{{transform:translateY(-2px);box-shadow:0 0 50px rgba(0,245,255,0.4);color:#fff}}.btn-outline-glow{{background:transparent;border:1px solid rgba(0,245,255,0.3);color:#00f5ff;font-weight:600;padding:10px 30px;border-radius:50px;transition:all .3s}}.btn-outline-glow:hover{{background:rgba(0,245,255,0.1);color:#00f5ff}}.table{{--bs-table-bg:transparent;color:#fff;border-color:rgba(255,255,255,0.05)}}code{{background:rgba(0,245,255,0.1);color:#00f5ff;padding:4px 8px;border-radius:5px}}footer{{background:rgba(10,10,30,0.95);border-top:1px solid rgba(0,255,255,0.05);padding:20px 0;text-align:center;position:relative;z-index:1;color:rgba(255,255,255,0.4)}}::-webkit-scrollbar{{width:6px}}::-webkit-scrollbar-track{{background:#0a0a1a}}::-webkit-scrollbar-thumb{{background:linear-gradient(135deg,#00f5ff,#7b2ff7);border-radius:3px}}</style></head><body><canvas id="bg-canvas"></canvas>
-<nav class="navbar navbar-expand-lg navbar-dark fixed-top"><div class="container"><a class="navbar-brand" href="/dashboard"><i class="bi bi-shield-shaded me-2"></i>VERNEX<span>API</span></a>
-<button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button>
-<div class="collapse navbar-collapse" id="nav"><ul class="navbar-nav ms-auto align-items-center gap-2">
-<li class="nav-item"><a class="nav-link active" href="/dashboard"><i class="bi bi-speedometer2 me-1"></i> Dashboard</a></li>
-<li class="nav-item"><a class="nav-link" href="/pricing"><i class="bi bi-cart3 me-1"></i> Pricing</a></li>
-<li class="nav-item"><a class="nav-link" href="/my-keys"><i class="bi bi-key me-1"></i> My Keys</a></li>
-<li class="nav-item"><a class="nav-link" href="/mailbox"><i class="bi bi-envelope me-1"></i> Mailbox</a></li>
-<li class="nav-item"><a class="nav-link" href="/logs"><i class="bi bi-clock-history me-1"></i> Logs</a></li>
-<li class="nav-item ms-2"><span class="text-muted small me-2"><i class="bi bi-person-circle me-1"></i>{{session.get("name",session.get("user"))}}</span>
-<a href="/logout" class="btn btn-outline-glow btn-sm"><i class="bi bi-box-arrow-right"></i></a></li></ul></div></div></nav>
-<div class="content-wrapper"><div class="container mt-4">
-{{get_flashed_messages_html()|safe}}
-<div class="glass-card mb-4"><div class="d-flex justify-content-between align-items-center"><div><h2 class="section-title mb-1">Welcome, {session.get("name","User")}! 👋</h2><p class="text-muted mb-0">Manage your API keys, monitor usage, and purchase new plans</p></div>
-<a href="/pricing" class="btn btn-glow"><i class="bi bi-cart-plus me-2"></i>Buy API Keys</a></div></div>
-<div class="row mb-4"><div class="col-md-4 mb-3"><div class="glass-card text-center"><i class="bi bi-key" style="font-size:2.5rem;color:#00f5ff"></i><h3 class="mt-2">{len(keys)}</h3><p class="text-muted mb-0">Active Keys</p></div></div>
-<div class="col-md-4 mb-3"><div class="glass-card text-center"><i class="bi bi-arrow-repeat" style="font-size:2.5rem;color:#7b2ff7"></i><h3 class="mt-2">{len(logs)}</h3><p class="text-muted mb-0">Recent Requests</p></div></div>
-<div class="col-md-4 mb-3"><div class="glass-card text-center"><i class="bi bi-credit-card" style="font-size:2.5rem;color:#00ff88"></i><h3 class="mt-2">{sum(k["requests_made"] for k in keys)}</h3><p class="text-muted mb-0">Total API Calls</p></div></div></div>
-<div class="glass-card mb-4"><h3 class="section-title"><i class="bi bi-key me-2"></i>Your API Keys</h3>
-{f'''<div class="table-responsive"><table class="table table-dark table-hover"><thead><tr><th>Key Name</th><th>APIs</th><th>Usage</th><th>Expires</th><th>Status</th></tr></thead><tbody>
-{"".join(f'<tr><td><code>{k["key_name"]}</code></td><td>{"All APIs" if k["all_apis"] else f"{len(json.loads(k["api_names"]))} APIs"}</td><td><div class="d-flex align-items-center"><div class="progress flex-grow-1 me-2" style="height:6px;background:rgba(255,255,255,0.1)"><div class="progress-bar bg-info" style="width:{round(k["requests_made"]/k["total_limit"]*100)}%"></div></div><small>{k["requests_made"]}/{k["total_limit"]}</small></div></td><td><span class="{"text-success" if k["expires_at"] > datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S") else "text-danger"}">{k["expires_at"]}</span></td><td><span class="badge bg-{"success" if k["is_active"] else "danger"}">{"Active" if k["is_active"] else "Inactive"}</span></td></tr>' for k in keys)}
-</tbody></table></div>' if keys else '<div class="text-center py-5"><i class="bi bi-key" style="font-size:3rem;color:rgba(255,255,255,0.1)"></i><p class="mt-2 text-muted">No API keys yet. <a href="/pricing" style="color:#00f5ff">Purchase your first key</a></p></div>'}
-</div></div></div>
-<footer><div class="container"><p class="mb-0">© 2026 <strong>VERNEX API</strong> — Developed by <span style="color:#00f5ff">SHAYAN_EXPLORER</span></p></div></footer>
-<script>const c=document.getElementById('bg-canvas'),ctx=c.getContext('2d');c.width=innerWidth;c.height=innerHeight;
-const ps=[];class P{constructor(){this.reset()}reset(){this.x=Math.random()*c.width;this.y=Math.random()*c.height;this.z=Math.random()*1000;this.size=Math.random()*2+0.5;this.speed=Math.random()*2+0.5;this.color=Math.random()>0.5?'#00f5ff':'#7b2ff7'}
-update(){this.z-=this.speed;if(this.z<=0)this.reset()}draw(){const s=500/this.z,x=(this.x-c.width/2)*s+c.width/2,y=(this.y-c.height/2)*s+c.height/2,sz=this.size*s;if(x<0||x>c.width||y<0||y>c.height)return;const op=Math.min(1,(500-this.z)/500);ctx.beginPath();ctx.arc(x,y,sz,0,Math.PI*2);ctx.fillStyle=this.color;ctx.globalAlpha=op*0.4;ctx.fill();ctx.shadowBlur=20;ctx.shadowColor=this.color}}
-for(let i=0;i<80;i++)ps.push(new P());function a(){ctx.clearRect(0,0,c.width,c.height);ps.forEach(p=>{p.update();p.draw()});requestAnimationFrame(a)}a();
-window.addEventListener('resize',()=>{c.width=innerWidth;c.height=innerHeight});</script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script></body></html>'''
-    }
-    if name in templates:
-        return templates[name]
-    return "<h1>Not Found</h1>"
-
-# Replace render_template
-def render_template(name, **kwargs):
-    return serve_template(name)
-
-# Flash messages helper
-def get_flashed_messages_html():
-    import flask
-    msgs = flask.get_flashed_messages(with_categories=True)
-    if not msgs: return ''
-    html = ''
-    for cat, msg in msgs:
-        cls = {'success':'alert-success','error':'alert-danger','info':'alert-info','warning':'alert-warning'}.get(cat,'alert-info')
-        html += f'<div class="alert {cls} alert-dismissible fade show" role="alert">{msg}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>'
-    return html
-
-# Override flask render_template
-import flask
-flask.render_template = render_template
-flask.get_flashed_messages_html = get_flashed_messages_html
-
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+# ======================= THIS IS CRITICAL FOR VERCEL =======================
+# The 'app' object MUST be at module level
+# app is already defined at the top of this file
