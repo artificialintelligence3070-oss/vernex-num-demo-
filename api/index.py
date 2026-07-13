@@ -1,512 +1,573 @@
 import os
 import json
-import logging
-from datetime import datetime, date
-from typing import Dict, List, Optional
-from fastapi import FastAPI, Depends, HTTPException, Header, status, Request
-from fastapi.responses import HTMLResponse
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+import hashlib
+import random
+import string
+import datetime
+import requests
+import razorpay
+import sqlite3
+import pytz
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
+from functools import wraps
+from datetime import datetime, timedelta
 
-app = FastAPI(title="SHAYAN_EXPLORER Premium Gateway", version="2.0.0")
+app = Flask(__name__)
+app.secret_key = "shayan_explorer_secret_2026_vernex_ultimate"
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# ======================= CONFIG =======================
+RAZORPAY_KEY_ID = "rzp_live_TCc5USt5FlmfrI"
+RAZORPAY_KEY_SECRET = "sMwLGQAEQePA0qSOYvFFII1h"
+razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
-# 🔐 SECURITY CONFIGURATION (Environment variables)
-RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "rzp_live_TCc5USt5FlmfrI")
+TELEGRAM_BOT_TOKEN = "8378722740:AAH9GthadrXQlTSp8pmPvlUnogXxhHv371s"
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+UPSTREAM_BASE = "https://ft-osint-api.duckdns.org/api"
+UPSTREAM_KEY = "ftgamer2"
+
 ADMIN_USERNAME = "vernex"
 ADMIN_PASSWORD = "vernex@16vx"
+IST = pytz.timezone('Asia/Kolkata')
 
-# In-memory database architecture
-api_keys_db: Dict[str, Dict] = {
-    "explorer16": {
-        "key_name": "VIP Enterprise Access",
-        "expires_at": "2026-12-31T23:59:59",
-        "daily_limit": 5000,
-        "request_count": 42,
-        "last_reset": str(date.today()),
-        "allowed_tools": ["all"]
-    }
+# ======================= DATABASE =======================
+def get_db():
+    conn = sqlite3.connect('/tmp/data.db', check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        name TEXT,
+        created_at TEXT DEFAULT (datetime('now')))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS api_keys (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key_name TEXT UNIQUE NOT NULL,
+        user_email TEXT NOT NULL,
+        api_names TEXT NOT NULL,
+        all_apis BOOLEAN DEFAULT 0,
+        daily_limit INTEGER DEFAULT 100,
+        total_limit INTEGER DEFAULT 1000,
+        requests_made INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')),
+        expires_at TEXT NOT NULL,
+        is_active BOOLEAN DEFAULT 1)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS api_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key_name TEXT NOT NULL,
+        user_email TEXT NOT NULL,
+        api_called TEXT NOT NULL,
+        query_param TEXT,
+        response_code INTEGER,
+        ip_address TEXT,
+        timestamp TEXT DEFAULT (datetime('now')))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id TEXT UNIQUE NOT NULL,
+        user_email TEXT NOT NULL,
+        package_name TEXT NOT NULL,
+        amount INTEGER NOT NULL,
+        currency TEXT DEFAULT 'INR',
+        payment_id TEXT,
+        status TEXT DEFAULT 'pending',
+        key_name TEXT,
+        created_at TEXT DEFAULT (datetime('now')))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        razorpay_payment_id TEXT,
+        razorpay_order_id TEXT,
+        user_email TEXT,
+        amount INTEGER,
+        status TEXT,
+        timestamp TEXT DEFAULT (datetime('now')))''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# ======================= API LIST =======================
+API_LIST = {
+    "number": {"name": "📞 Number Lookup", "price_monthly": 100, "price_3months": 250, "endpoint": "/number", "param": "num", "type": "paid"},
+    "paytm": {"name": "💳 Paytm Lookup", "price_monthly": 100, "price_3months": 250, "endpoint": "/paytm", "param": "num", "type": "paid"},
+    "calltracer": {"name": "📞 Call Tracer", "price_monthly": 100, "price_3months": 250, "endpoint": "/calltracer", "param": "num", "type": "paid"},
+    "advance": {"name": "📞 Advance ICMR", "price_monthly": 100, "price_3months": 250, "endpoint": "/adv", "param": "num", "type": "paid"},
+    "email": {"name": "📧 Email Leak", "price_monthly": 400, "price_3months": 1100, "endpoint": "/email", "param": "email", "type": "paid"},
+    "aadhar": {"name": "🪪 Aadhaar", "price_monthly": 200, "price_3months": 550, "endpoint": "/aadhar", "param": "num", "type": "paid"},
+    "adharfamily": {"name": "👨‍👩‍👧‍👦 Aadhaar Family", "price_monthly": 200, "price_3months": 550, "endpoint": "/adharfamily", "param": "num", "type": "paid"},
+    "upi": {"name": "💳 UPI Lookup", "price_monthly": 150, "price_3months": 400, "endpoint": "/upi", "param": "upi", "type": "paid"},
+    "numtoupi": {"name": "💳 Num to UPI", "price_monthly": 150, "price_3months": 400, "endpoint": "/numtoupi", "param": "num", "type": "paid"},
+    "pan": {"name": "🪪 PAN to GST", "price_monthly": 100, "price_3months": 250, "endpoint": "/pan", "param": "pan", "type": "paid"},
+    "ifsc": {"name": "🏦 IFSC Lookup", "price_monthly": 50, "price_3months": 120, "endpoint": "/ifsc", "param": "ifsc", "type": "paid"},
+    "pincode": {"name": "📍 Pincode", "price_monthly": 30, "price_3months": 80, "endpoint": "/pincode", "param": "pin", "type": "paid"},
+    "ip": {"name": "🌐 IP Lookup", "price_monthly": 30, "price_3months": 80, "endpoint": "/ip", "param": "ip", "type": "paid"},
+    "vehicle": {"name": "🚘 Vehicle Owner", "price_monthly": 400, "price_3months": 1000, "endpoint": "/vehicle", "param": "vehicle", "type": "paid"},
+    "veh2num": {"name": "🚗 Vehicle to Num", "price_monthly": 400, "price_3months": 1000, "endpoint": "/veh2num", "param": "vehicle", "type": "paid"},
+    "challan": {"name": "🚘 Challan", "price_monthly": 400, "price_3months": 1000, "endpoint": "/challan", "param": "vehicle", "type": "paid"},
+    "freefire": {"name": "🎮 Free Fire", "price_monthly": 80, "price_3months": 200, "endpoint": "/ff", "param": "uid", "type": "paid"},
+    "bgmi": {"name": "🎮 BGMI", "price_monthly": 80, "price_3months": 200, "endpoint": "/bgmi", "param": "uid", "type": "paid"},
+    "snapchat": {"name": "👻 Snapchat", "price_monthly": 80, "price_3months": 200, "endpoint": "/snap", "param": "username", "type": "paid"},
+    "bomber": {"name": "💣 SMS Bomber", "price_monthly": 150, "price_3months": 400, "endpoint": "/bomber", "param": "number", "type": "paid"},
+    "pk": {"name": "🇵🇰 Pakistan Num", "price_monthly": 100, "price_3months": 250, "endpoint": "/pk", "param": "num", "type": "paid"},
+    "name": {"name": "🔍 Name Lookup", "price_monthly": 400, "price_3months": 1100, "endpoint": "/name", "param": "name", "type": "paid"},
+    "instagram": {"name": "📸 Instagram", "price_monthly": 0, "price_3months": 0, "endpoint": "/insta", "param": "username", "type": "free"},
+    "github": {"name": "🐙 GitHub", "price_monthly": 0, "price_3months": 0, "endpoint": "/git", "param": "username", "type": "free"},
+    "tg": {"name": "✈️ TG Username→Num", "price_monthly": 0, "price_3months": 0, "endpoint": "/tg", "param": "info", "type": "free"},
+    "tgidinfo": {"name": "🆔 TG ID Info", "price_monthly": 0, "price_3months": 0, "endpoint": "/tgidinfo", "param": "id", "type": "free"},
+    "imei": {"name": "📱 IMEI Lookup", "price_monthly": 100, "price_3months": 250, "endpoint": "/imei", "param": "imei", "type": "paid"},
+    "numleak": {"name": "📢 Number Leak", "price_monthly": 100, "price_3months": 250, "endpoint": "/numleak", "param": "num", "type": "paid"},
 }
 
-logs_db: List[Dict] = [
-    {"timestamp": "2026-07-13T16:20:11", "key_used": "explorer16", "tool": "Core_Identity_Verify", "status": "Success"},
-    {"timestamp": "2026-07-13T16:22:45", "key_used": "explorer16", "tool": "Network_Telemetry", "status": "Success"}
-]
+BUNDLES = {
+    "starter": {"name": "🔥 Starter Pack", "price_monthly": 500, "price_3months": 1300,
+        "apis": ["number","paytm","calltracer","advance","aadhar","adharfamily","upi","numtoupi","pan","ifsc","pincode","ip","freefire","bgmi"]},
+    "pro": {"name": "💎 Pro Pack", "price_monthly": 1200, "price_3months": 3000, "apis": "all_except_vehicle"},
+    "ultimate": {"name": "👑 Ultimate Pack", "price_monthly": 1600, "price_3months": 4200, "apis": "all"}
+}
 
-# Pydantic Schemas
-class KeyGenerateRequest(BaseModel):
-    key_name: str
-    custom_key: str
-    expires_at: str
-    daily_limit: int
-    allowed_tools: List[str]
+# ======================= HELPERS =======================
+def generate_key():
+    return "KEY" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
 
-class LoginRequest(BaseModel):
-    username: str
-    password: str
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'user' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
 
-# --- API ENDPOINTS ---
-@app.post("/api/admin/login")
-async def admin_login(data: LoginRequest):
-    if data.username == ADMIN_USERNAME and data.password == ADMIN_PASSWORD:
-        return {"status": "success", "token": "premium_secure_session_token"}
-    raise HTTPException(status_code=401, detail="Unauthorized: Access Credentials Invalid.")
+def send_telegram(msg):
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        try:
+            requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                data={"chat_id": TELEGRAM_CHAT_ID, "text": msg, "parse_mode": "HTML"}, timeout=3)
+        except: pass
 
-@app.post("/api/admin/generate-key")
-async def generate_key(data: KeyGenerateRequest):
-    api_keys_db[data.custom_key] = {
-        "key_name": data.key_name,
-        "expires_at": data.expires_at,
-        "daily_limit": data.daily_limit,
-        "request_count": 0,
-        "last_reset": str(date.today()),
-        "allowed_tools": data.allowed_tools
-    }
-    return {"status": "success", "message": f"Token Key '{data.custom_key}' integrated."}
+# ======================= ROUTES =======================
 
-@app.get("/api/admin/dashboard-data")
-async def get_dashboard_data():
-    return {
-        "keys": api_keys_db,
-        "logs": logs_db[-20:] # Return last 20 operations
-    }
+@app.route('/')
+def index():
+    if 'user' in session:
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
 
-# --- PREMIUM USER INTERFACE SURFACE ---
-@app.get("/", response_class=HTMLResponse)
-async def render_luxury_portal():
-    html_content = """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>SHAYAN EXPLORER | Luxury API Management Network</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-        <script src="https://unpkg.com/lucide@latest"></script>
-        <script>
-            tailwind.config = {
-                theme: {
-                    extend: {
-                        colors: {
-                            gold: { 400: '#E6C15C', 500: '#D4AF37', 600: '#AA882C' },
-                            darkspace: '#070A12'
-                        }
-                    }
-                }
-            }
-        </script>
-        <style>
-            canvas { position: fixed; top:0; left:0; width:100%; height:100%; z-index:1; pointer-events:none; }
-            .glass { background: rgba(15, 22, 42, 0.65); backdrop-filter: blur(14px); border: 1px solid rgba(212, 175, 55, 0.15); }
-            .glass-gold { background: linear-gradient(135deg, rgba(212,175,55,0.1) 0%, rgba(7,10,18,0.4) 100%); border: 1px solid rgba(212, 175, 55, 0.3); }
-        </style>
-    </head>
-    <body class="bg-darkspace text-slate-100 min-h-screen overflow-x-hidden font-sans">
+@app.route('/login', methods=['GET','POST'])
+def login():
+    if 'user' in session:
+        return redirect(url_for('dashboard'))
+    if request.method == 'POST':
+        email = request.form.get('email','').strip()
+        password = request.form.get('password','')
+        if email == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+            session['user'] = ADMIN_USERNAME
+            session['email'] = "admin@vernex.com"
+            session['name'] = "Admin"
+            flash('Welcome Admin!','success')
+            return redirect(url_for('admin_dashboard'))
+        conn = get_db()
+        user = conn.execute("SELECT * FROM users WHERE email=?",(email,)).fetchone()
+        conn.close()
+        if user and user['password'] == hashlib.sha256(password.encode()).hexdigest():
+            session['user'] = email
+            session['email'] = email
+            session['name'] = user['name'] or email.split('@')[0]
+            flash('Login successful!','success')
+            return redirect(url_for('dashboard'))
+        flash('Invalid credentials!','error')
+    return render_template('login.html')
+
+@app.route('/register', methods=['GET','POST'])
+def register():
+    if 'user' in session:
+        return redirect(url_for('dashboard'))
+    if request.method == 'POST':
+        email = request.form.get('email','').strip()
+        password = request.form.get('password','')
+        name = request.form.get('name','').strip()
+        if not email or not password:
+            flash('Email and password required!','error')
+            return render_template('register.html')
+        conn = get_db()
+        if conn.execute("SELECT id FROM users WHERE email=?",(email,)).fetchone():
+            flash('Email already registered!','error')
+            conn.close()
+            return render_template('register.html')
+        conn.execute("INSERT INTO users (email,password,name) VALUES (?,?,?)",
+            (email,hashlib.sha256(password.encode()).hexdigest(),name or email.split('@')[0]))
+        conn.commit()
+        conn.close()
+        flash('Registration successful! Please login.','success')
+        return redirect(url_for('login'))
+    return render_template('register.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    flash('Logged out!','info')
+    return redirect(url_for('login'))
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    email = session.get('email', session.get('user'))
+    conn = get_db()
+    keys = conn.execute("SELECT * FROM api_keys WHERE user_email=? ORDER BY created_at DESC",(email,)).fetchall()
+    logs = conn.execute("SELECT * FROM api_logs WHERE user_email=? ORDER BY timestamp DESC LIMIT 10",(email,)).fetchall()
+    conn.close()
+    return render_template('dashboard.html', keys=keys, logs=logs, api_list=API_LIST, bundles=BUNDLES)
+
+@app.route('/pricing')
+@login_required
+def pricing():
+    return render_template('pricing.html', api_list=API_LIST, bundles=BUNDLES)
+
+@app.route('/checkout', methods=['GET','POST'])
+@login_required
+def checkout():
+    if request.method == 'POST':
+        ptype = request.form.get('package_type','')
+        pid = request.form.get('package_id','')
+        dur = request.form.get('duration','monthly')
+        kname = request.form.get('key_name','') or generate_key()
+        days = 30 if dur == 'monthly' else 90
         
-        <!-- 3D Background Space Graph -->
-        <canvas id="three-canvas"></canvas>
+        amount = 0
+        if ptype == 'bundle':
+            b = BUNDLES.get(pid)
+            if b: amount = b[f'price_{dur}']
+        else:
+            a = API_LIST.get(pid)
+            if a: amount = a[f'price_{dur}']
+        
+        if amount <= 0:
+            flash('Invalid package!','error')
+            return redirect(url_for('pricing'))
+        
+        try:
+            order = razorpay_client.order.create({
+                'amount': amount*100, 'currency': 'INR',
+                'receipt': f'receipt_{kname}_{datetime.now().timestamp()}',
+                'notes': {'user_email': session.get('email'), 'package': pid, 'key_name': kname, 'duration': dur}
+            })
+            conn = get_db()
+            conn.execute("INSERT INTO orders (order_id,user_email,package_name,amount,currency,key_name) VALUES (?,?,?,?,?,?)",
+                (order['id'], session.get('email'), f"{ptype}_{pid}", amount, 'INR', kname))
+            conn.commit()
+            conn.close()
+            return render_template('checkout.html', order=order, razorpay_key=RAZORPAY_KEY_ID,
+                amount=amount, key_name=kname, duration=dur, package_id=pid, package_type=ptype)
+        except Exception as e:
+            flash(f'Payment error: {str(e)}','error')
+            return redirect(url_for('pricing'))
+    return redirect(url_for('pricing'))
 
-        <div class="relative z-10 min-h-screen flex flex-col justify-between">
-            <!-- Header Panel -->
-            <header class="glass px-6 py-4 flex justify-between items-center border-b border-gold-500/20">
-                <div class="flex items-center space-x-3">
-                    <div class="p-2 bg-gold-500/10 rounded-lg border border-gold-500/30">
-                        <i data-lucide="shield-alert" class="text-gold-400 w-6 h-6"></i>
-                    </div>
-                    <div>
-                        <h1 class="text-lg font-bold tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-gold-400">SHAYAN EXPLORER</h1>
-                        <p class="text-[10px] text-slate-400 uppercase tracking-widest">Next-Gen Data Telemetry Portal</p>
-                    </div>
-                </div>
+@app.route('/payment-success', methods=['POST'])
+@login_required
+def payment_success():
+    pid = request.form.get('razorpay_payment_id')
+    oid = request.form.get('razorpay_order_id')
+    sig = request.form.get('razorpay_signature')
+    kname = request.form.get('key_name', generate_key())
+    pkg_id = request.form.get('package_id','')
+    ptype = request.form.get('package_type','single')
+    dur = request.form.get('duration','monthly')
+    email = session.get('email')
+    
+    try:
+        razorpay_client.utility.verify_payment_signature({
+            'razorpay_order_id': oid, 'razorpay_payment_id': pid, 'razorpay_signature': sig
+        })
+    except:
+        flash('Payment verification failed!','error')
+        return redirect(url_for('dashboard'))
+    
+    apis = []
+    all_apis = False
+    if ptype == 'bundle':
+        b = BUNDLES.get(pkg_id)
+        if b:
+            if b['apis'] == 'all': all_apis = True; apis = list(API_LIST.keys())
+            elif b['apis'] == 'all_except_vehicle': apis = [k for k in API_LIST if k not in ['vehicle','veh2num','challan']]
+            else: apis = b['apis']
+    else:
+        apis = [pkg_id]
+    
+    days = 30 if dur == 'monthly' else 90
+    expires = (datetime.now(IST) + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+    daily_limit = 1000 if all_apis else 100
+    total_limit = 10000 if all_apis else 1000
+    
+    conn = get_db()
+    try:
+        conn.execute("""INSERT INTO api_keys (key_name,user_email,api_names,all_apis,daily_limit,total_limit,requests_made,expires_at,is_active)
+            VALUES (?,?,?,?,?,?,0,?,1)""", (kname, email, json.dumps(apis), 1 if all_apis else 0, daily_limit, total_limit, expires))
+        conn.execute("UPDATE orders SET payment_id=?, status='completed' WHERE order_id=?", (pid, oid))
+        conn.execute("INSERT INTO payments (razorpay_payment_id,razorpay_order_id,user_email,amount,status) VALUES (?,?,?,?,'completed')",
+            (pid, oid, email, 0))
+        conn.commit()
+        send_telegram(f"✅ <b>New Purchase!</b>\n👤 {email}\n🔑 {kname}\n📦 {pkg_id} ({dur})\n📅 Exp: {expires}\n💳 {pid}")
+        flash(f'🎉 Payment successful! Your key: <strong>{kname}</strong>','success')
+    except Exception as e:
+        flash(f'Error: {str(e)}','error')
+    finally:
+        conn.close()
+    return redirect(url_for('mykeys'))
 
-                <!-- Right Side Interacting Items -->
-                <div class="flex items-center space-x-4">
-                    <button onclick="toggleAdminPanel()" class="flex items-center space-x-2 text-sm font-semibold text-gold-400 px-4 py-2 border border-gold-500/30 rounded-lg hover:bg-gold-500/10 transition-all">
-                        <i data-lucide="sliders" class="w-4 h-4"></i>
-                        <span>Admin Console</span>
-                    </button>
-                    <!-- Mailbox System -->
-                    <div class="relative">
-                        <button onclick="toggleMailbox()" class="p-2 glass rounded-lg hover:border-gold-500/50 text-slate-300 relative">
-                            <i data-lucide="mail" class="w-5 h-5"></i>
-                            <span id="mail-dot" class="absolute top-1 right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span>
-                        </button>
-                        <!-- Floating Mailbox Dropdown -->
-                        <div id="mailbox-panel" class="hidden absolute right-0 mt-3 w-80 glass rounded-xl p-4 shadow-2xl z-50 animate-fade-in">
-                            <h3 class="text-sm font-bold text-gold-400 border-b border-slate-700 pb-2 mb-2 flex items-center justify-between">
-                                <span>Secure Key Delivery Vault</span>
-                                <i data-lucide="inbox" class="w-4 h-4 text-gold-400"></i>
-                            </h3>
-                            <div id="mail-contents" class="space-y-2 text-xs text-slate-300">
-                                <div class="p-2 bg-slate-900/80 rounded border border-emerald-500/30">
-                                    <p class="font-bold text-emerald-400 mb-1">System Allocation Complete</p>
-                                    <p>Your master test token key <code class="text-gold-400 font-mono">explorer16</code> is globally active with complete route clearing profiles.</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </header>
+@app.route('/my-keys')
+@login_required
+def mykeys():
+    email = session.get('email', session.get('user'))
+    conn = get_db()
+    keys = conn.execute("SELECT * FROM api_keys WHERE user_email=? ORDER BY created_at DESC",(email,)).fetchall()
+    conn.close()
+    return render_template('mykeys.html', keys=keys)
 
-            <!-- Main Layout Space -->
-            <main class="container mx-auto px-4 py-8 flex-grow">
-                
-                <!-- Admin Dashboard (Initially Hidden via JS configuration) -->
-                <section id="admin-view" class="hidden mb-12 glass rounded-2xl p-6 border border-gold-500/30">
-                    <div class="flex justify-between items-center border-b border-slate-800 pb-4 mb-6">
-                        <div class="flex items-center space-x-2">
-                            <i data-lucide="command" class="text-gold-400 w-5 h-5"></i>
-                            <h2 class="text-xl font-bold text-gold-400">Infrastructure Configuration</h2>
-                        </div>
-                        <span class="text-xs bg-gold-500/10 text-gold-400 px-3 py-1 rounded-full border border-gold-500/20">Authorized Terminal Instance</span>
-                    </div>
+@app.route('/logs')
+@login_required
+def logs():
+    email = session.get('email', session.get('user'))
+    conn = get_db()
+    logs = conn.execute("SELECT * FROM api_logs WHERE user_email=? ORDER BY timestamp DESC LIMIT 100",(email,)).fetchall()
+    conn.close()
+    return render_template('logs.html', logs=logs)
 
-                    <!-- Key Generation Grid -->
-                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <div class="glass-gold p-5 rounded-xl space-y-4">
-                            <h3 class="font-bold text-sm uppercase text-slate-300 tracking-wider flex items-center space-x-2">
-                                <i data-lucide="key-round" class="w-4 h-4 text-gold-400"></i>
-                                <span>Generate Secure Client Token</span>
-                            </h3>
-                            <div class="space-y-3 text-xs">
-                                <div>
-                                    <label class="block text-slate-400 mb-1">Client Description Name</label>
-                                    <input id="new-name" type="text" class="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-200 focus:outline-none focus:border-gold-500" placeholder="e.g., Enterprise Client Alpha">
-                                </div>
-                                <div>
-                                    <label class="block text-slate-400 mb-1">Custom Secret Authentication Key</label>
-                                    <input id="new-key" type="text" class="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-200 focus:outline-none focus:border-gold-500" placeholder="e.g., alpha-secret-2026">
-                                </div>
-                                <div class="grid grid-cols-2 gap-2">
-                                    <div>
-                                        <label class="block text-slate-400 mb-1">Daily Cap Limit</label>
-                                        <input id="new-limit" type="number" class="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-200 focus:outline-none focus:border-gold-500" value="1000">
-                                    </div>
-                                    <div>
-                                        <label class="block text-slate-400 mb-1">Expiration Timeline</label>
-                                        <input id="new-expiry" type="date" class="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-200 focus:outline-none focus:border-gold-500">
-                                    </div>
-                                </div>
-                                <button onclick="executeGenerateKey()" class="w-full bg-gradient-to-r from-gold-600 to-gold-400 text-slate-950 font-bold py-2 rounded.hover:opacity-90 transition-all flex items-center justify-center space-x-2 mt-4 text-sm">
-                                    <i data-lucide="plus-circle" class="w-4 h-4"></i>
-                                    <span>Deploy Token Key</span>
-                                </button>
-                            </div>
-                        </div>
+@app.route('/mailbox')
+@login_required
+def mailbox():
+    email = session.get('email', session.get('user'))
+    conn = get_db()
+    keys = conn.execute("SELECT * FROM api_keys WHERE user_email=? ORDER BY created_at DESC",(email,)).fetchall()
+    conn.close()
+    return render_template('mailbox.html', keys=keys)
 
-                        <!-- Active System Allocations -->
-                        <div class="lg:col-span-2 glass p-5 rounded-xl overflow-hidden flex flex-col">
-                            <h3 class="font-bold text-sm uppercase text-slate-300 tracking-wider mb-3 flex items-center space-x-2">
-                                <i data-lucide="database" class="w-4 h-4 text-gold-400"></i>
-                                <span>Active Security Allocations</span>
-                            </h3>
-                            <div class="overflow-x-auto text-xs flex-grow">
-                                <table class="w-full text-left border-collapse">
-                                    <thead>
-                                        <tr class="border-b border-slate-800 text-slate-400">
-                                            <th class="pb-2 font-medium">Identifier Profile</th>
-                                            <th class="pb-2 font-medium">Token Key Payload</th>
-                                            <th class="pb-2 font-medium">Daily Utilization</th>
-                                            <th class="pb-2 font-medium">System Lifespan</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="active-keys-table" class="divide-y divide-slate-900">
-                                        <!-- Dynamically injected via script processing -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </section>
+@app.route('/api/v1/<api_name>', methods=['GET'])
+def api_gateway(api_name):
+    kname = request.args.get('key','')
+    if not kname:
+        return jsonify({"error":"API key required","status":"error"}), 401
+    conn = get_db()
+    ak = conn.execute("SELECT * FROM api_keys WHERE key_name=? AND is_active=1",(kname,)).fetchone()
+    if not ak:
+        conn.close()
+        return jsonify({"error":"Invalid API key","status":"error"}), 403
+    if datetime.now(IST) > datetime.strptime(ak['expires_at'],'%Y-%m-%d %H:%M:%S').replace(tzinfo=IST):
+        conn.execute("UPDATE api_keys SET is_active=0 WHERE key_name=?",(kname,))
+        conn.commit()
+        conn.close()
+        return jsonify({"error":"Key expired","status":"error"}), 403
+    if ak['requests_made'] >= ak['total_limit']:
+        conn.close()
+        return jsonify({"error":"Request limit exhausted","status":"error"}), 429
+    today = datetime.now(IST).strftime('%Y-%m-%d')
+    daily = conn.execute("SELECT COUNT(*) as c FROM api_logs WHERE key_name=? AND timestamp LIKE ?",(kname,f"{today}%")).fetchone()
+    if daily and daily['c'] >= ak['daily_limit']:
+        conn.close()
+        return jsonify({"error":"Daily limit exhausted","status":"error"}), 429
+    allowed = json.loads(ak['api_names'])
+    if api_name not in allowed and not ak['all_apis']:
+        conn.close()
+        return jsonify({"error":f"API '{api_name}' not in your plan","status":"error"}), 403
+    ac = API_LIST.get(api_name)
+    if not ac:
+        conn.close()
+        return jsonify({"error":"Unknown API","status":"error"}), 404
+    pname = ac['param']
+    pval = request.args.get(pname,'')
+    if not pval:
+        conn.close()
+        return jsonify({"error":f"Missing param: {pname}","status":"error"}), 400
+    url = f"{UPSTREAM_BASE}{ac['endpoint']}?key={UPSTREAM_KEY}&{pname}={pval}"
+    if api_name == 'bomber':
+        url += f"&counter={request.args.get('counter','100')}"
+    try:
+        resp = requests.get(url, timeout=30)
+        data = resp.json() if 'application/json' in resp.headers.get('content-type','') else resp.text
+        conn.execute("INSERT INTO api_logs (key_name,user_email,api_called,query_param,response_code,ip_address) VALUES (?,?,?,?,?,?)",
+            (kname, ak['user_email'], api_name, f"{pname}={pval}", resp.status_code, request.remote_addr or '0.0.0.0'))
+        conn.execute("UPDATE api_keys SET requests_made=requests_made+1 WHERE key_name=?",(kname,))
+        conn.commit()
+        conn.close()
+        return jsonify({"status":"success","data":data,"key_info":{"key_name":kname,"used":ak['requests_made']+1,"limit":ak['total_limit'],"expires":ak['expires_at']}})
+    except Exception as e:
+        conn.close()
+        return jsonify({"error":f"Upstream error: {str(e)}","status":"error"}), 502
 
-                <!-- Commercial Showroom Presentation Matrix -->
-                <div class="text-center max-w-2xl mx-auto mb-12 space-y-3">
-                    <span class="text-xs tracking-widest text-gold-400 uppercase font-semibold bg-gold-500/10 px-4 py-1.5 rounded-full border border-gold-500/30">Enterprise Data Node Distribution Architecture</span>
-                    <h2 class="text-4xl font-extrabold tracking-tight text-white">Premium Monetized Telemetry Gateway</h2>
-                    <p class="text-slate-400 text-sm">Deploy modular operational structures with nanosecond execution speed. Choose targeted data access streams backed by hardware-grade transaction compliance models.</p>
-                </div>
+@app.route('/admin')
+@login_required
+def admin_dashboard():
+    if session.get('user') != ADMIN_USERNAME:
+        flash('Admin only!','error')
+        return redirect(url_for('dashboard'))
+    conn = get_db()
+    users = conn.execute("SELECT * FROM users ORDER BY created_at DESC").fetchall()
+    keys = conn.execute("SELECT * FROM api_keys ORDER BY created_at DESC").fetchall()
+    logs = conn.execute("SELECT * FROM api_logs ORDER BY timestamp DESC LIMIT 50").fetchall()
+    orders = conn.execute("SELECT * FROM orders ORDER BY created_at DESC").fetchall()
+    payments = conn.execute("SELECT * FROM payments ORDER BY timestamp DESC LIMIT 20").fetchall()
+    stats = {
+        'total_users': conn.execute("SELECT COUNT(*) as c FROM users").fetchone()['c'],
+        'total_keys': conn.execute("SELECT COUNT(*) as c FROM api_keys").fetchone()['c'],
+        'active_keys': conn.execute("SELECT COUNT(*) as c FROM api_keys WHERE is_active=1").fetchone()['c'],
+        'total_requests': conn.execute("SELECT COUNT(*) as c FROM api_logs").fetchone()['c'],
+        'total_revenue': conn.execute("SELECT SUM(amount) as s FROM orders WHERE status='completed'").fetchone()['s'] or 0,
+    }
+    conn.close()
+    return render_template('admin.html', users=users, keys=keys, logs=logs, orders=orders, payments=payments, stats=stats, api_list=API_LIST)
 
-                <!-- Interactive Pricing Infrastructure Matrix Grid -->
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    <!-- Standard Tier Layer -->
-                    <div class="glass rounded-2xl p-6 flex flex-col justify-between relative group hover:border-gold-500/40 transition-all duration-300">
-                        <div>
-                            <div class="flex justify-between items-start mb-4">
-                                <div>
-                                    <h3 class="text-xl font-bold tracking-wide text-white">Identity Core Bundle</h3>
-                                    <p class="text-xs text-slate-400 mt-1">Foundational verification matrix</p>
-                                </div>
-                                <div class="p-2 bg-slate-900 rounded-xl border border-slate-800"><i data-lucide="user-check" class="text-gold-400 w-5 h-5"></i></div>
-                            </div>
-                            <div class="my-6 border-b border-slate-800/60 pb-6">
-                                <span class="text-3xl font-extrabold text-white">₹100</span>
-                                <span class="text-xs text-slate-400"> / monthly tier cyclic</span>
-                            </div>
-                            <ul class="space-y-3 text-xs text-slate-300 mb-8">
-                                <li class="flex items-center space-x-2.5"><i data-lucide="check" class="w-4 h-4 text-gold-400"></i><span>Paytm Verification Systems Wrapper</span></li>
-                                <li class="flex items-center space-x-2.5"><i data-lucide="check" class="w-4 h-4 text-gold-400"></i><span>Advanced Call Tracer Routing</span></li>
-                                <li class="flex items-center space-x-2.5"><i data-lucide="check" class="w-4 h-4 text-gold-400"></i><span>Infrastructure Ledger Integrations</span></li>
-                            </ul>
-                        </div>
-                        <button onclick="triggerPurchase('Identity Core Bundle', 100)" class="w-full py-3 rounded-xl bg-slate-900 hover:bg-gold-500/10 border border-gold-500/30 text-gold-400 font-bold tracking-wider text-xs uppercase transition-all">Initialize Smart Checkout</button>
-                    </div>
+@app.route('/admin/create-key', methods=['POST'])
+@login_required
+def admin_create_key():
+    if session.get('user') != ADMIN_USERNAME:
+        return jsonify({"error":"Unauthorized"}), 403
+    kname = request.form.get('key_name','') or generate_key()
+    uemail = request.form.get('user_email','')
+    anames = request.form.get('api_names','all')
+    dlim = int(request.form.get('daily_limit',1000))
+    tlim = int(request.form.get('total_limit',10000))
+    exp = request.form.get('expires_at',(datetime.now(IST)+timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S'))
+    if anames == 'all':
+        all_apis = True
+        apilist = list(API_LIST.keys())
+    else:
+        all_apis = False
+        apilist = anames.split(',')
+    conn = get_db()
+    try:
+        conn.execute("INSERT INTO api_keys (key_name,user_email,api_names,all_apis,daily_limit,total_limit,expires_at) VALUES (?,?,?,?,?,?,?)",
+            (kname, uemail, json.dumps(apilist), 1 if all_apis else 0, dlim, tlim, exp))
+        conn.commit()
+        flash(f'Key {kname} created!','success')
+    except Exception as e:
+        flash(f'Error: {str(e)}','error')
+    finally:
+        conn.close()
+    return redirect(url_for('admin_dashboard'))
 
-                    <!-- Enterprise Core Bundle Layer (Featured) -->
-                    <div class="glass-gold rounded-2xl p-6 flex flex-col justify-between relative scale-105 border-gold-500/40 shadow-2xl shadow-gold-500/5">
-                        <span class="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-gold-600 to-gold-400 text-slate-950 font-black tracking-widest text-[9px] uppercase px-4 py-1 rounded-full shadow-lg">HIGH UTILIZATION BANDWIDTH</span>
-                        <div>
-                            <div class="flex justify-between items-start mb-4">
-                                <div>
-                                    <h3 class="text-xl font-bold tracking-wide text-white">Global Telemetry Pack</h3>
-                                    <p class="text-xs text-amber-100/60 mt-1">Unified geographical data mapping</p>
-                                </div>
-                                <div class="p-2 bg-gold-500/20 rounded-xl border border-gold-500/40"><i data-lucide="globe" class="text-gold-400 w-5 h-5"></i></div>
-                            </div>
-                            <div class="my-6 border-b border-gold-500/20 pb-6">
-                                <span class="text-3xl font-extrabold text-white">₹500</span>
-                                <span class="text-xs text-amber-100/60"> / monthly tier cyclic</span>
-                            </div>
-                            <ul class="space-y-3 text-xs text-amber-100/80 mb-8">
-                                <li class="flex items-center space-x-2.5"><i data-lucide="shield-check" class="w-4 h-4 text-gold-400"></i><span>Core Financial IFSC API Matrix</span></li>
-                                <li class="flex items-center space-x-2.5"><i data-lucide="shield-check" class="w-4 h-4 text-gold-400"></i><span>Regional Pincode Registry Stream</span></li>
-                                <li class="flex items-center space-x-2.5"><i data-lucide="shield-check" class="w-4 h-4 text-gold-400"></i><span>Network Architecture IP Resolution</span></li>
-                                <li class="flex items-center space-x-2.5"><i data-lucide="shield-check" class="w-4 h-4 text-gold-400"></i><span>Unified Settlement Address Protocols</span></li>
-                            </ul>
-                        </div>
-                        <button onclick="triggerPurchase('Global Telemetry Pack', 500)" class="w-full py-3 rounded-xl bg-gradient-to-r from-gold-500 to-amber-500 hover:opacity-90 text-slate-950 font-black tracking-wider text-xs uppercase transition-all shadow-md shadow-gold-500/20">Initialize Smart Checkout</button>
-                    </div>
+@app.route('/admin/toggle-key/<key_name>')
+@login_required
+def admin_toggle_key(key_name):
+    if session.get('user') != ADMIN_USERNAME:
+        return jsonify({"error":"Unauthorized"}), 403
+    conn = get_db()
+    k = conn.execute("SELECT * FROM api_keys WHERE key_name=?",(key_name,)).fetchone()
+    if k:
+        ns = 0 if k['is_active'] else 1
+        conn.execute("UPDATE api_keys SET is_active=? WHERE key_name=?",(ns,key_name))
+        conn.commit()
+        flash(f'Key {"activated" if ns else "deactivated"}!','success')
+    conn.close()
+    return redirect(url_for('admin_dashboard'))
 
-                    <!-- Ultimate Apex Portfolio Bundle Layer -->
-                    <div class="glass rounded-2xl p-6 flex flex-col justify-between relative group hover:border-gold-500/40 transition-all duration-300">
-                        <div>
-                            <div class="flex justify-between items-start mb-4">
-                                <div>
-                                    <h3 class="text-xl font-bold tracking-wide text-white">Ultimate Apex Suite</h3>
-                                    <p class="text-xs text-slate-400 mt-1">Complete analytical execution system</p>
-                                </div>
-                                <div class="p-2 bg-slate-900 rounded-xl border border-slate-800"><i data-lucide="cpu" class="text-gold-400 w-5 h-5"></i></div>
-                            </div>
-                            <div class="my-6 border-b border-slate-800/60 pb-6">
-                                <span class="text-3xl font-extrabold text-white">₹1600</span>
-                                <span class="text-xs text-slate-400"> / monthly tier cyclic</span>
-                            </div>
-                            <ul class="space-y-3 text-xs text-slate-300 mb-8">
-                                <li class="flex items-center space-x-2.5"><i data-lucide="check" class="w-4 h-4 text-gold-400"></i><span>Access clearance across all 20 API streams</span></li>
-                                <li class="flex items-center space-x-2.5"><i data-lucide="check" class="w-4 h-4 text-gold-400"></i><span>Real-time server log export functionality</span></li>
-                                <li class="flex items-center space-x-2.5"><i data-lucide="check" class="w-4 h-4 text-gold-400"></i><span>Dedicated support channel tracking routing</span></li>
-                            </ul>
-                        </div>
-                        <button onclick="triggerPurchase('Ultimate Apex Suite', 1600)" class="w-full py-3 rounded-xl bg-slate-900 hover:bg-gold-500/10 border border-gold-500/30 text-gold-400 font-bold tracking-wider text-xs uppercase transition-all">Initialize Smart Checkout</button>
-                    </div>
-                </div>
-            </main>
+@app.route('/admin/delete-key/<key_name>')
+@login_required
+def admin_delete_key(key_name):
+    if session.get('user') != ADMIN_USERNAME:
+        return jsonify({"error":"Unauthorized"}), 403
+    conn = get_db()
+    conn.execute("DELETE FROM api_keys WHERE key_name=?",(key_name,))
+    conn.commit()
+    conn.close()
+    flash(f'Key deleted!','info')
+    return redirect(url_for('admin_dashboard'))
 
-            <!-- Sticky Admin Authentication Security Overlay Window -->
-            <div id="login-modal" class="hidden fixed inset-0 flex items-center justify-center bg-slate-950/80 backdrop-blur-xl z-50 p-4">
-                <div class="glass max-w-sm w-full p-6 rounded-2xl shadow-2xl border border-gold-500/40">
-                    <div class="text-center space-y-2 mb-6">
-                        <div class="mx-auto w-12 h-12 bg-gold-500/10 rounded-full flex items-center justify-center border border-gold-500/30 mb-2">
-                            <i data-lucide="lock" class="text-gold-400 w-5 h-5"></i>
-                        </div>
-                        <h3 class="text-lg font-bold text-white tracking-wide">Infrastructure Gatekeeper</h3>
-                        <p class="text-xs text-slate-400">Enter high-level validation tokens to access key config controls</p>
-                    </div>
-                    <div class="space-y-4 text-xs">
-                        <div>
-                            <label class="block text-slate-400 mb-1 font-semibold">Security Username ID</label>
-                            <input id="login-user" type="text" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-gold-500 font-mono">
-                        </div>
-                        <div>
-                            <label class="block text-slate-400 mb-1 font-semibold">Cryptographic Security Passphrase</label>
-                            <input id="login-pass" type="password" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-gold-500 font-mono">
-                        </div>
-                        <div class="flex space-x-2 pt-2">
-                            <button onclick="toggleAdminPanel()" class="w-1/2 py-2.5 rounded-xl border border-slate-700 hover:bg-slate-900 text-slate-300 font-bold tracking-wide transition-all">Abort Access</button>
-                            <button onclick="executeAdminLogin()" class="w-1/2 py-2.5 rounded-xl bg-gradient-to-r from-gold-500 to-gold-600 text-slate-950 font-black tracking-wide hover:opacity-90 transition-all">Verify Access</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
+@app.route('/health')
+def health():
+    return jsonify({"status":"ok","developer":"SHAYAN_EXPLORER","version":"2.0.0"})
 
-            <!-- Global Footer System -->
-            <footer class="glass mt-12 py-4 px-6 text-center text-[11px] text-slate-400 tracking-wider border-t border-slate-900">
-                <p>&copy; 2026 <span class="text-gold-400 font-bold">SHAYAN EXPLORER Architecture Portfolio</span>. All system pipelines fully operational.</p>
-            </footer>
-        </div>
+# ======================= TEMPLATES (inline) =======================
 
-        <script>
-            // Initialize Lucide SVG Vector Asset Rendering Engine
-            lucide.createIcons();
+@app.route('/templates/<name>')
+def serve_template(name):
+    templates = {
+        'login.html': '''<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Login - VERNEX API</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css"><link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Poppins:wght@300;400;600;700;900&display=swap" rel="stylesheet"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Poppins',sans-serif;background:#0a0a1a;color:#fff;overflow-x:hidden;min-height:100vh;display:flex;align-items:center;justify-content:center}#bg-canvas{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none}.glass-card{background:rgba(255,255,255,0.03);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.05);border-radius:20px;padding:40px;transition:all .3s;position:relative;z-index:1;width:100%;max-width:450px}.glass-card:hover{border-color:rgba(0,245,255,0.2);box-shadow:0 0 40px rgba(0,245,255,0.05)}.section-title{font-family:'Orbitron',monospace;font-weight:700;background:linear-gradient(135deg,#00f5ff,#7b2ff7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}.btn-glow{background:linear-gradient(135deg,#00f5ff,#7b2ff7);border:none;color:#fff;font-weight:600;padding:12px 30px;border-radius:50px;transition:all .3s;box-shadow:0 0 30px rgba(0,245,255,0.2)}.btn-glow:hover{transform:translateY(-2px);box-shadow:0 0 50px rgba(0,245,255,0.4);color:#fff}.form-control{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff;border-radius:12px;padding:12px 15px}.form-control:focus{border-color:#00f5ff;box-shadow:0 0 20px rgba(0,245,255,0.1)}.input-group-text{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#00f5ff;border-radius:12px 0 0 12px}.particle{position:fixed;width:4px;height:4px;background:#00f5ff;border-radius:50%;pointer-events:none;animation:float linear infinite;opacity:0.3}@keyframes float{0%{transform:translateY(100vh) rotate(0deg);opacity:0}10%{opacity:0.5}90%{opacity:0.5}100%{transform:translateY(-100vh) rotate(720deg);opacity:0}}</style></head><body><canvas id="bg-canvas"></canvas>''' + ''.join([f'<div class="particle" style="left:{random.randint(0,100)}%;animation-duration:{random.randint(15,35)}s;animation-delay:{random.randint(0,10)}s;width:{random.randint(2,6)}px;height:{random.randint(2,6)}px"></div>' for _ in range(20)]) + '''
+<div class="container"><div class="row justify-content-center"><div class="col-md-5">
+<div class="glass-card text-center"><div class="mb-4"><i class="bi bi-shield-shaded" style="font-size:4rem;color:#00f5ff"></i></div>
+<h2 class="section-title">Welcome Back</h2><p class="text-muted mb-4">Login to VERNEX API</p>
+<form method="POST" action="/login"><div class="mb-3"><div class="input-group"><span class="input-group-text"><i class="bi bi-person"></i></span>
+<input type="text" name="email" class="form-control" placeholder="Email or Username" required></div></div>
+<div class="mb-4"><div class="input-group"><span class="input-group-text"><i class="bi bi-lock"></i></span>
+<input type="password" name="password" class="form-control" placeholder="Password" required></div></div>
+<button type="submit" class="btn btn-glow w-100"><i class="bi bi-box-arrow-in-right me-2"></i> Login</button></form>
+<p class="mt-4 text-muted">No account? <a href="/register" style="color:#00f5ff;text-decoration:none;">Register</a></p>
+<p class="mt-2" style="font-size:0.8rem;color:rgba(255,255,255,0.3)">Developed by <span style="color:#00f5ff">SHAYAN_EXPLORER</span></p></div></div></div></div>
+<script>const c=document.getElementById('bg-canvas'),ctx=c.getContext('2d');c.width=innerWidth;c.height=innerHeight;
+const ps=[];class P{constructor(){this.reset()}reset(){this.x=Math.random()*c.width;this.y=Math.random()*c.height;this.z=Math.random()*1000;this.size=Math.random()*2+0.5;this.speed=Math.random()*2+0.5;this.color=Math.random()>0.5?'#00f5ff':'#7b2ff7'}
+update(){this.z-=this.speed;if(this.z<=0)this.reset()}draw(){const s=500/this.z,x=(this.x-c.width/2)*s+c.width/2,y=(this.y-c.height/2)*s+c.height/2,sz=this.size*s;if(x<0||x>c.width||y<0||y>c.height)return;const op=Math.min(1,(500-this.z)/500);ctx.beginPath();ctx.arc(x,y,sz,0,Math.PI*2);ctx.fillStyle=this.color;ctx.globalAlpha=op*0.4;ctx.fill();ctx.shadowBlur=20;ctx.shadowColor=this.color}}
+for(let i=0;i<80;i++)ps.push(new P());function a(){ctx.clearRect(0,0,c.width,c.height);ps.forEach(p=>{p.update();p.draw()});requestAnimationFrame(a)}a();
+window.addEventListener('resize',()=>{c.width=innerWidth;c.height=innerHeight});</script></body></html>''',
 
-            let adminAuthenticated = false;
+        'register.html': '''<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Register - VERNEX API</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css"><link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Poppins:wght@300;400;600;700;900&display=swap" rel="stylesheet"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Poppins',sans-serif;background:#0a0a1a;color:#fff;overflow-x:hidden;min-height:100vh;display:flex;align-items:center;justify-content:center}#bg-canvas{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none}.glass-card{background:rgba(255,255,255,0.03);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.05);border-radius:20px;padding:40px;transition:all .3s;position:relative;z-index:1;width:100%;max-width:450px}.section-title{font-family:'Orbitron',monospace;font-weight:700;background:linear-gradient(135deg,#00f5ff,#7b2ff7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}.btn-glow{background:linear-gradient(135deg,#00f5ff,#7b2ff7);border:none;color:#fff;font-weight:600;padding:12px 30px;border-radius:50px;transition:all .3s;box-shadow:0 0 30px rgba(0,245,255,0.2)}.btn-glow:hover{transform:translateY(-2px);box-shadow:0 0 50px rgba(0,245,255,0.4);color:#fff}.form-control{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff;border-radius:12px;padding:12px 15px}.form-control:focus{border-color:#00f5ff;box-shadow:0 0 20px rgba(0,245,255,0.1)}.input-group-text{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#7b2ff7;border-radius:12px 0 0 12px}</style></head><body><canvas id="bg-canvas"></canvas>
+<div class="container"><div class="row justify-content-center"><div class="col-md-5">
+<div class="glass-card text-center"><div class="mb-4"><i class="bi bi-person-plus-fill" style="font-size:4rem;color:#7b2ff7"></i></div>
+<h2 class="section-title">Create Account</h2><p class="text-muted mb-4">Join VERNEX API Platform</p>
+<form method="POST" action="/register"><div class="mb-3"><div class="input-group"><span class="input-group-text"><i class="bi bi-person"></i></span>
+<input type="text" name="name" class="form-control" placeholder="Full Name"></div></div>
+<div class="mb-3"><div class="input-group"><span class="input-group-text"><i class="bi bi-envelope"></i></span>
+<input type="email" name="email" class="form-control" placeholder="Email Address" required></div></div>
+<div class="mb-4"><div class="input-group"><span class="input-group-text"><i class="bi bi-lock"></i></span>
+<input type="password" name="password" class="form-control" placeholder="Password" required></div></div>
+<button type="submit" class="btn btn-glow w-100"><i class="bi bi-person-plus me-2"></i> Register</button></form>
+<p class="mt-4 text-muted">Already have an account? <a href="/login" style="color:#00f5ff;text-decoration:none;">Login</a></p></div></div></div></div></body></html>''',
 
-            // --- Elegant Cosmic Three.js Particle Vector Lattice Background Setup ---
-            const canvasElement = document.getElementById('three-canvas');
-            const scene = new THREE.Scene();
-            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            const renderer = new THREE.WebGLRenderer({ canvas: canvasElement, alpha: true, antialias: true });
-            
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        'dashboard.html': f'''<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard - VERNEX API</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css"><link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Poppins:wght@300;400;600;700;900&display=swap" rel="stylesheet"><style>*{{margin:0;padding:0;box-sizing:border-box}}body{{font-family:'Poppins',sans-serif;background:#0a0a1a;color:#fff;overflow-x:hidden}}#bg-canvas{{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none}}.navbar{{background:rgba(10,10,30,0.95);backdrop-filter:blur(20px);border-bottom:1px solid rgba(0,255,255,0.1);z-index:1000}}.navbar-brand{{font-family:'Orbitron',monospace;font-weight:900;font-size:1.5rem;background:linear-gradient(135deg,#00f5ff,#7b2ff7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}}.navbar-brand span{{-webkit-text-fill-color:#fff;background:none}}.nav-link{{color:rgba(255,255,255,0.7)!important;transition:all .3s}}.nav-link:hover,.nav-link.active{{color:#00f5ff!important;text-shadow:0 0 20px rgba(0,245,255,0.5)}}.content-wrapper{{position:relative;z-index:1;padding-top:80px;min-height:100vh}}.glass-card{{background:rgba(255,255,255,0.03);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.05);border-radius:20px;padding:30px;transition:all .3s}}.glass-card:hover{{border-color:rgba(0,245,255,0.2);box-shadow:0 0 40px rgba(0,245,255,0.05);transform:translateY(-5px)}}.section-title{{font-family:'Orbitron',monospace;font-weight:700;background:linear-gradient(135deg,#00f5ff,#7b2ff7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}}.btn-glow{{background:linear-gradient(135deg,#00f5ff,#7b2ff7);border:none;color:#fff;font-weight:600;padding:10px 30px;border-radius:50px;transition:all .3s;box-shadow:0 0 30px rgba(0,245,255,0.2)}}.btn-glow:hover{{transform:translateY(-2px);box-shadow:0 0 50px rgba(0,245,255,0.4);color:#fff}}.btn-outline-glow{{background:transparent;border:1px solid rgba(0,245,255,0.3);color:#00f5ff;font-weight:600;padding:10px 30px;border-radius:50px;transition:all .3s}}.btn-outline-glow:hover{{background:rgba(0,245,255,0.1);color:#00f5ff}}.table{{--bs-table-bg:transparent;color:#fff;border-color:rgba(255,255,255,0.05)}}code{{background:rgba(0,245,255,0.1);color:#00f5ff;padding:4px 8px;border-radius:5px}}footer{{background:rgba(10,10,30,0.95);border-top:1px solid rgba(0,255,255,0.05);padding:20px 0;text-align:center;position:relative;z-index:1;color:rgba(255,255,255,0.4)}}::-webkit-scrollbar{{width:6px}}::-webkit-scrollbar-track{{background:#0a0a1a}}::-webkit-scrollbar-thumb{{background:linear-gradient(135deg,#00f5ff,#7b2ff7);border-radius:3px}}</style></head><body><canvas id="bg-canvas"></canvas>
+<nav class="navbar navbar-expand-lg navbar-dark fixed-top"><div class="container"><a class="navbar-brand" href="/dashboard"><i class="bi bi-shield-shaded me-2"></i>VERNEX<span>API</span></a>
+<button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button>
+<div class="collapse navbar-collapse" id="nav"><ul class="navbar-nav ms-auto align-items-center gap-2">
+<li class="nav-item"><a class="nav-link active" href="/dashboard"><i class="bi bi-speedometer2 me-1"></i> Dashboard</a></li>
+<li class="nav-item"><a class="nav-link" href="/pricing"><i class="bi bi-cart3 me-1"></i> Pricing</a></li>
+<li class="nav-item"><a class="nav-link" href="/my-keys"><i class="bi bi-key me-1"></i> My Keys</a></li>
+<li class="nav-item"><a class="nav-link" href="/mailbox"><i class="bi bi-envelope me-1"></i> Mailbox</a></li>
+<li class="nav-item"><a class="nav-link" href="/logs"><i class="bi bi-clock-history me-1"></i> Logs</a></li>
+<li class="nav-item ms-2"><span class="text-muted small me-2"><i class="bi bi-person-circle me-1"></i>{{session.get("name",session.get("user"))}}</span>
+<a href="/logout" class="btn btn-outline-glow btn-sm"><i class="bi bi-box-arrow-right"></i></a></li></ul></div></div></nav>
+<div class="content-wrapper"><div class="container mt-4">
+{{get_flashed_messages_html()|safe}}
+<div class="glass-card mb-4"><div class="d-flex justify-content-between align-items-center"><div><h2 class="section-title mb-1">Welcome, {session.get("name","User")}! 👋</h2><p class="text-muted mb-0">Manage your API keys, monitor usage, and purchase new plans</p></div>
+<a href="/pricing" class="btn btn-glow"><i class="bi bi-cart-plus me-2"></i>Buy API Keys</a></div></div>
+<div class="row mb-4"><div class="col-md-4 mb-3"><div class="glass-card text-center"><i class="bi bi-key" style="font-size:2.5rem;color:#00f5ff"></i><h3 class="mt-2">{len(keys)}</h3><p class="text-muted mb-0">Active Keys</p></div></div>
+<div class="col-md-4 mb-3"><div class="glass-card text-center"><i class="bi bi-arrow-repeat" style="font-size:2.5rem;color:#7b2ff7"></i><h3 class="mt-2">{len(logs)}</h3><p class="text-muted mb-0">Recent Requests</p></div></div>
+<div class="col-md-4 mb-3"><div class="glass-card text-center"><i class="bi bi-credit-card" style="font-size:2.5rem;color:#00ff88"></i><h3 class="mt-2">{sum(k["requests_made"] for k in keys)}</h3><p class="text-muted mb-0">Total API Calls</p></div></div></div>
+<div class="glass-card mb-4"><h3 class="section-title"><i class="bi bi-key me-2"></i>Your API Keys</h3>
+{f'''<div class="table-responsive"><table class="table table-dark table-hover"><thead><tr><th>Key Name</th><th>APIs</th><th>Usage</th><th>Expires</th><th>Status</th></tr></thead><tbody>
+{"".join(f'<tr><td><code>{k["key_name"]}</code></td><td>{"All APIs" if k["all_apis"] else f"{len(json.loads(k["api_names"]))} APIs"}</td><td><div class="d-flex align-items-center"><div class="progress flex-grow-1 me-2" style="height:6px;background:rgba(255,255,255,0.1)"><div class="progress-bar bg-info" style="width:{round(k["requests_made"]/k["total_limit"]*100)}%"></div></div><small>{k["requests_made"]}/{k["total_limit"]}</small></div></td><td><span class="{"text-success" if k["expires_at"] > datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S") else "text-danger"}">{k["expires_at"]}</span></td><td><span class="badge bg-{"success" if k["is_active"] else "danger"}">{"Active" if k["is_active"] else "Inactive"}</span></td></tr>' for k in keys)}
+</tbody></table></div>' if keys else '<div class="text-center py-5"><i class="bi bi-key" style="font-size:3rem;color:rgba(255,255,255,0.1)"></i><p class="mt-2 text-muted">No API keys yet. <a href="/pricing" style="color:#00f5ff">Purchase your first key</a></p></div>'}
+</div></div></div>
+<footer><div class="container"><p class="mb-0">© 2026 <strong>VERNEX API</strong> — Developed by <span style="color:#00f5ff">SHAYAN_EXPLORER</span></p></div></footer>
+<script>const c=document.getElementById('bg-canvas'),ctx=c.getContext('2d');c.width=innerWidth;c.height=innerHeight;
+const ps=[];class P{constructor(){this.reset()}reset(){this.x=Math.random()*c.width;this.y=Math.random()*c.height;this.z=Math.random()*1000;this.size=Math.random()*2+0.5;this.speed=Math.random()*2+0.5;this.color=Math.random()>0.5?'#00f5ff':'#7b2ff7'}
+update(){this.z-=this.speed;if(this.z<=0)this.reset()}draw(){const s=500/this.z,x=(this.x-c.width/2)*s+c.width/2,y=(this.y-c.height/2)*s+c.height/2,sz=this.size*s;if(x<0||x>c.width||y<0||y>c.height)return;const op=Math.min(1,(500-this.z)/500);ctx.beginPath();ctx.arc(x,y,sz,0,Math.PI*2);ctx.fillStyle=this.color;ctx.globalAlpha=op*0.4;ctx.fill();ctx.shadowBlur=20;ctx.shadowColor=this.color}}
+for(let i=0;i<80;i++)ps.push(new P());function a(){ctx.clearRect(0,0,c.width,c.height);ps.forEach(p=>{p.update();p.draw()});requestAnimationFrame(a)}a();
+window.addEventListener('resize',()=>{c.width=innerWidth;c.height=innerHeight});</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script></body></html>'''
+    }
+    if name in templates:
+        return templates[name]
+    return "<h1>Not Found</h1>"
 
-            const particleGeometry = new THREE.BufferGeometry();
-            const pointCount = 120;
-            const positionArray = new Float32Array(pointCount * 3);
+# Replace render_template
+def render_template(name, **kwargs):
+    return serve_template(name)
 
-            for(let i=0; i < pointCount * 3; i++) {
-                positionArray[i] = (Math.random() - 0.5) * 10;
-            }
-            particleGeometry.setAttribute('position', new THREE.BufferAttribute(positionArray, 3));
+# Flash messages helper
+def get_flashed_messages_html():
+    import flask
+    msgs = flask.get_flashed_messages(with_categories=True)
+    if not msgs: return ''
+    html = ''
+    for cat, msg in msgs:
+        cls = {'success':'alert-success','error':'alert-danger','info':'alert-info','warning':'alert-warning'}.get(cat,'alert-info')
+        html += f'<div class="alert {cls} alert-dismissible fade show" role="alert">{msg}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>'
+    return html
 
-            const particleMaterial = new THREE.PointsMaterial({
-                size: 0.035,
-                color: 0xD4AF37,
-                transparent: true,
-                opacity: 0.65
-            });
+# Override flask render_template
+import flask
+flask.render_template = render_template
+flask.get_flashed_messages_html = get_flashed_messages_html
 
-            const particleMesh = new THREE.Points(particleGeometry, particleMaterial);
-            scene.add(particleMesh);
-            camera.position.z = 3;
-
-            function animationLoop() {
-                requestAnimationFrame(animationLoop);
-                particleMesh.rotation.y += 0.0008;
-                particleMesh.rotation.x += 0.0004;
-                renderer.render(scene, camera);
-            }
-            animationLoop();
-
-            window.addEventListener('resize', () => {
-                camera.aspect = window.innerWidth / window.innerHeight;
-                camera.updateProjectionMatrix();
-                renderer.setSize(window.innerWidth, window.innerHeight);
-            });
-
-            // --- INTERACTION ARCHITECTURE LOGIC ---
-            function toggleMailbox() {
-                const designBox = document.getElementById('mailbox-panel');
-                designBox.classList.toggle('hidden');
-                document.getElementById('mail-dot').classList.add('hidden');
-            }
-
-            function toggleAdminPanel() {
-                if (!adminAuthenticated) {
-                    document.getElementById('login-modal').classList.toggle('hidden');
-                } else {
-                    const viewPanel = document.getElementById('admin-view');
-                    viewPanel.classList.toggle('hidden');
-                }
-            }
-
-            async function executeAdminLogin() {
-                const user = document.getElementById('login-user').value;
-                const pass = document.getElementById('login-pass').value;
-
-                try {
-                    const response = await fetch('/api/admin/login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ username: user, password: pass })
-                    });
-                    
-                    if (response.ok) {
-                        adminAuthenticated = true;
-                        document.getElementById('login-modal').classList.add('hidden');
-                        document.getElementById('admin-view').classList.remove('hidden');
-                        fetchAdminDashboardData();
-                    } else {
-                        alert('Cryptographic matching verification failure.');
-                    }
-                } catch (err) {
-                    console.error(err);
-                }
-            }
-
-            async function fetchAdminDashboardData() {
-                try {
-                    const response = await fetch('/api/admin/dashboard-data');
-                    const data = await response.json();
-                    
-                    const tableContainer = document.getElementById('active-keys-table');
-                    tableContainer.innerHTML = '';
-                    
-                    Object.keys(data.keys).forEach(tokenKey => {
-                        const info = data.keys[tokenKey];
-                        const row = `
-                            <tr class="hover:bg-slate-900/50">
-                                <td class="py-3 font-semibold text-slate-200">${info.key_name}</td>
-                                <td class="py-3"><code class="text-gold-400 font-mono font-bold bg-slate-950 px-2 py-0.5 rounded border border-slate-800">${tokenKey}</code></td>
-                                <td class="py-3 font-mono">${info.request_count} / <span class="text-slate-400">${info.daily_limit}</span></td>
-                                <td class="py-3 text-slate-400">${info.expires_at.split('T')[0]}</td>
-                            </tr>
-                        `;
-                        tableContainer.innerHTML += row;
-                    });
-                } catch (e) {
-                    console.error("Dashboard synchronization error.", e);
-                }
-            }
-
-            async function executeGenerateKey() {
-                const name = document.getElementById('new-name').value;
-                const key = document.getElementById('new-key').value;
-                const limit = document.getElementById('new-limit').value;
-                const expiryInput = document.getElementById('new-expiry').value;
-
-                if(!name || !key || !expiryInput) return alert('Complete all parameter properties.');
-
-                const payload = {
-                    key_name: name,
-                    custom_key: key,
-                    expires_at: `${expiryInput}T23:59:59`,
-                    daily_limit: parseInt(limit),
-                    allowed_tools: ["all"]
-                };
-
-                const res = await fetch('/api/admin/generate-key', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                if(res.ok) {
-                    alert('Token allocation built and active globally.');
-                    fetchAdminDashboardData();
-                }
-            }
-
-            function triggerPurchase(bundleName, amount) {
-                alert(`[Simulating Checkout Handshake Verification]\\nConnecting Securely via Razorpay Terminal ID: rzp_live_TCc5USt5FlmfrI\\n\\nProcessing transactional validation routing for ${bundleName} (INR ${amount})...`);
-                
-                // Emulate Webhook Payment Capture Success Fulfill Action Loop
-                setTimeout(() => {
-                    const mailboxVault = document.getElementById('mail-contents');
-                    const randomGeneratedString = 'exp_' + Math.random().toString(36).substring(2, 10);
-                    
-                    const generatedMailContent = `
-                        <div class="p-2 bg-slate-900/80 rounded border border-gold-500/30 animate-pulse">
-                            <p class="font-bold text-gold-400 mb-0.5">🔒 Order Confirmed: ${bundleName}</p>
-                            <p>Key payload dispatched into system matrix runtime successfully:</p>
-                            <p class="font-mono text-white mt-1 bg-black/60 p-1 rounded select-all text-center border border-slate-800">${randomGeneratedString}</p>
-                            <p class="text-[9px] text-slate-400 mt-1">Daily Allotted Allocation Cap: 2,500 operations / 30 day cycle active.</p>
-                        </div>
-                    `;
-                    mailboxVault.innerHTML = generatedMailContent + mailboxVault.innerHTML;
-                    document.getElementById('mail-dot').classList.remove('hidden');
-                    alert('Transaction Accepted! Check your secure system mailbox vault located at the top right header profile element.');
-                }, 1200);
-            }
-        </script>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content, status_code=200)
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
