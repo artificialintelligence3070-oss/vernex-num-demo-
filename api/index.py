@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 import csv
 import io
 import json
@@ -21,7 +21,7 @@ import requests
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-DB_PATH = "/tmp/osint_luxury_hub.db"
+DB_PATH = "/tmp/shayan_luxury_osint.db"
 
 
 def get_db():
@@ -117,8 +117,8 @@ TEMPLATE = """
             theme: {
                 extend: {
                     colors: {
-                        luxurybg: '#08080a',
-                        luxurycard: '#121216',
+                        luxurybg: '#050507',
+                        luxurycard: '#101014',
                         goldaccent: '#d4af37',
                         goldlight: '#f3e5ab'
                     }
@@ -128,29 +128,33 @@ TEMPLATE = """
     </script>
     <style>
         .glass-card {
-            background: rgba(18, 18, 22, 0.85);
-            backdrop-filter: blur(30px);
-            border: 1px solid rgba(212, 175, 55, 0.18);
-            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            background: rgba(16, 16, 20, 0.88);
+            backdrop-filter: blur(40px);
+            border: 1px solid rgba(212, 175, 55, 0.2);
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .glass-card:hover {
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.9), 0 0 25px rgba(212, 175, 55, 0.12);
         }
         .glass-input {
-            background: rgba(8, 8, 10, 0.9);
-            border: 1px solid rgba(212, 175, 55, 0.2);
+            background: rgba(5, 5, 7, 0.95);
+            border: 1px solid rgba(212, 175, 55, 0.25);
             color: #f3e5ab;
         }
         .glass-input:focus {
             border-color: #d4af37;
-            box-shadow: 0 0 20px rgba(212, 175, 55, 0.25);
+            box-shadow: 0 0 20px rgba(212, 175, 55, 0.3);
             outline: none;
         }
         .gold-glow {
-            box-shadow: 0 0 30px rgba(212, 175, 55, 0.25);
+            box-shadow: 0 0 35px rgba(212, 175, 55, 0.3);
         }
         .gold-glow:hover {
-            box-shadow: 0 0 45px rgba(212, 175, 55, 0.45);
+            box-shadow: 0 0 50px rgba(212, 175, 55, 0.5);
         }
         .gold-gradient {
-            background: linear-gradient(135deg, #f3e5ab 0%, #d4af37 50%, #aa7c11 100%);
+            background: linear-gradient(135deg, #f3e5ab 0%, #d4af37 55%, #aa7c11 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
@@ -160,9 +164,9 @@ TEMPLATE = """
 
     {% if not session.get('logged_in') %}
     <!-- EXECUTIVE LOGIN -->
-    <div class="flex items-center justify-center min-h-screen px-4 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-950/20 via-luxurybg to-luxurybg">
+    <div class="flex items-center justify-center min-h-screen px-4 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-950/30 via-luxurybg to-luxurybg">
         <div class="glass-card p-8 md:p-12 rounded-3xl w-full max-w-md shadow-2xl relative overflow-hidden">
-            <div class="absolute -top-28 -right-28 w-56 h-56 bg-amber-500/10 rounded-full blur-3xl"></div>
+            <div class="absolute -top-32 -right-32 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
             
             <div class="text-center mb-8 relative z-10">
                 <div class="inline-flex p-4 rounded-2xl bg-amber-500/10 text-goldaccent mb-4 text-3xl shadow-inner border border-amber-500/30">
@@ -207,47 +211,56 @@ TEMPLATE = """
         </div>
     </div>
     {% else %}
-    <!-- EXECUTIVE DASHBOARD -->
-    <div class="flex h-screen overflow-hidden" x-data="{ currentTab: 'overview', editModalOpen: false, editKey: {} }">
+    <!-- EXECUTIVE DASHBOARD (MOBILE & PC RESPONSIVE WITH HAMBURGER DRAWER) -->
+    <div class="flex h-screen overflow-hidden" x-data="{ currentTab: 'overview', sidebarOpen: false, editModalOpen: false, editKey: {} }">
         
-        <!-- Sidebar -->
-        <aside class="w-72 glass-card border-r border-amber-500/20 flex flex-col z-20">
-            <div class="p-6 border-b border-amber-500/10 flex items-center gap-3.5">
-                <div class="bg-amber-500/10 text-goldaccent p-3 rounded-2xl border border-amber-500/30">
-                    <i class="fa-solid fa-gem text-lg"></i>
-                </div>
-                <div>
-                    <h2 class="font-black text-xs tracking-wider text-white gold-gradient">SHAYAN EXPLORER</h2>
-                    <div class="flex items-center gap-2 mt-0.5">
-                        <span class="h-2 w-2 rounded-full bg-goldaccent animate-pulse"></span>
-                        <span class="text-[10px] text-amber-400 font-mono tracking-wide">LUXURY SUITE</span>
+        <!-- Mobile Sidebar Backdrop -->
+        <div x-show="sidebarOpen" @click="sidebarOpen = false" class="fixed inset-0 z-30 bg-black/70 backdrop-blur-sm md:hidden"></div>
+
+        <!-- Sidebar Navigation Drawer -->
+        <aside :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'" class="fixed md:static inset-y-0 left-0 z-40 w-72 glass-card border-r border-amber-500/20 flex flex-col transition-transform duration-300 md:translate-x-0">
+            <div class="p-6 border-b border-amber-500/10 flex items-center justify-between">
+                <div class="flex items-center gap-3.5">
+                    <div class="bg-amber-500/10 text-goldaccent p-3 rounded-2xl border border-amber-500/30">
+                        <i class="fa-solid fa-gem text-lg"></i>
+                    </div>
+                    <div>
+                        <h2 class="font-black text-xs tracking-wider text-white gold-gradient">SHAYAN EXPLORER</h2>
+                        <div class="flex items-center gap-2 mt-0.5">
+                            <span class="h-2 w-2 rounded-full bg-goldaccent animate-pulse"></span>
+                            <span class="text-[10px] text-amber-400 font-mono tracking-wide">LUXURY SUITE</span>
+                        </div>
                     </div>
                 </div>
+                <!-- Close Button for Mobile -->
+                <button @click="sidebarOpen = false" class="md:hidden text-amber-400 hover:text-white p-2">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
             </div>
 
             <nav class="flex-1 p-4 space-y-1.5 text-xs font-semibold overflow-y-auto">
-                <a @click="currentTab = 'overview'" :class="currentTab === 'overview' ? 'bg-amber-500/15 text-goldaccent border border-amber-500/30 shadow-lg' : 'text-gray-400 hover:bg-gray-800/40 hover:text-white'" class="flex items-center gap-3.5 px-4 py-3 rounded-xl transition cursor-pointer">
+                <a @click="currentTab = 'overview'; sidebarOpen = false;" :class="currentTab === 'overview' ? 'bg-amber-500/15 text-goldaccent border border-amber-500/30 shadow-lg' : 'text-gray-400 hover:bg-gray-800/40 hover:text-white'" class="flex items-center gap-3.5 px-4 py-3 rounded-xl transition cursor-pointer">
                     <i class="fa-solid fa-chart-pie w-5 text-sm"></i> Executive Overview
                 </a>
-                <a @click="currentTab = 'keys'" :class="currentTab === 'keys' ? 'bg-amber-500/15 text-goldaccent border border-amber-500/30 shadow-lg' : 'text-gray-400 hover:bg-gray-800/40 hover:text-white'" class="flex items-center gap-3.5 px-4 py-3 rounded-xl transition cursor-pointer">
+                <a @click="currentTab = 'keys'; sidebarOpen = false;" :class="currentTab === 'keys' ? 'bg-amber-500/15 text-goldaccent border border-amber-500/30 shadow-lg' : 'text-gray-400 hover:bg-gray-800/40 hover:text-white'" class="flex items-center gap-3.5 px-4 py-3 rounded-xl transition cursor-pointer">
                     <i class="fa-solid fa-key w-5 text-sm"></i> API Vault & IP Whitelist
                 </a>
-                <a @click="currentTab = 'sandbox'" :class="currentTab === 'sandbox' ? 'bg-amber-500/15 text-goldaccent border border-amber-500/30 shadow-lg' : 'text-gray-400 hover:bg-gray-800/40 hover:text-white'" class="flex items-center gap-3.5 px-4 py-3 rounded-xl transition cursor-pointer">
+                <a @click="currentTab = 'sandbox'; sidebarOpen = false;" :class="currentTab === 'sandbox' ? 'bg-amber-500/15 text-goldaccent border border-amber-500/30 shadow-lg' : 'text-gray-400 hover:bg-gray-800/40 hover:text-white'" class="flex items-center gap-3.5 px-4 py-3 rounded-xl transition cursor-pointer">
                     <i class="fa-solid fa-terminal w-5 text-sm"></i> Live API Sandbox
                 </a>
-                <a @click="currentTab = 'endpoints'" :class="currentTab === 'endpoints' ? 'bg-amber-500/15 text-goldaccent border border-amber-500/30 shadow-lg' : 'text-gray-400 hover:bg-gray-800/40 hover:text-white'" class="flex items-center gap-3.5 px-4 py-3 rounded-xl transition cursor-pointer">
+                <a @click="currentTab = 'endpoints'; sidebarOpen = false;" :class="currentTab === 'endpoints' ? 'bg-amber-500/15 text-goldaccent border border-amber-500/30 shadow-lg' : 'text-gray-400 hover:bg-gray-800/40 hover:text-white'" class="flex items-center gap-3.5 px-4 py-3 rounded-xl transition cursor-pointer">
                     <i class="fa-solid fa-code w-5 text-sm"></i> Endpoints & Snippets
                 </a>
-                <a @click="currentTab = 'publicdocs'" :class="currentTab === 'publicdocs' ? 'bg-amber-500/15 text-goldaccent border border-amber-500/30 shadow-lg' : 'text-gray-400 hover:bg-gray-800/40 hover:text-white'" class="flex items-center gap-3.5 px-4 py-3 rounded-xl transition cursor-pointer">
+                <a @click="currentTab = 'publicdocs'; sidebarOpen = false;" :class="currentTab === 'publicdocs' ? 'bg-amber-500/15 text-goldaccent border border-amber-500/30 shadow-lg' : 'text-gray-400 hover:bg-gray-800/40 hover:text-white'" class="flex items-center gap-3.5 px-4 py-3 rounded-xl transition cursor-pointer">
                     <i class="fa-solid fa-globe w-5 text-sm"></i> Public Catalog (/public)
                 </a>
-                <a @click="currentTab = 'logs'" :class="currentTab === 'logs' ? 'bg-amber-500/15 text-goldaccent border border-amber-500/30 shadow-lg' : 'text-gray-400 hover:bg-gray-800/40 hover:text-white'" class="flex items-center gap-3.5 px-4 py-3 rounded-xl transition cursor-pointer">
+                <a @click="currentTab = 'logs'; sidebarOpen = false;" :class="currentTab === 'logs' ? 'bg-amber-500/15 text-goldaccent border border-amber-500/30 shadow-lg' : 'text-gray-400 hover:bg-gray-800/40 hover:text-white'" class="flex items-center gap-3.5 px-4 py-3 rounded-xl transition cursor-pointer">
                     <i class="fa-solid fa-shield-halved w-5 text-sm"></i> Audit & Activity Stream
                 </a>
-                <a @click="currentTab = 'health'" :class="currentTab === 'health' ? 'bg-amber-500/15 text-goldaccent border border-amber-500/30 shadow-lg' : 'text-gray-400 hover:bg-gray-800/40 hover:text-white'" class="flex items-center gap-3.5 px-4 py-3 rounded-xl transition cursor-pointer">
+                <a @click="currentTab = 'health'; sidebarOpen = false;" :class="currentTab === 'health' ? 'bg-amber-500/15 text-goldaccent border border-amber-500/30 shadow-lg' : 'text-gray-400 hover:bg-gray-800/40 hover:text-white'" class="flex items-center gap-3.5 px-4 py-3 rounded-xl transition cursor-pointer">
                     <i class="fa-solid fa-heart-pulse w-5 text-sm"></i> Gateway Diagnostics
                 </a>
-                <a @click="currentTab = 'tools'" :class="currentTab === 'tools' ? 'bg-amber-500/15 text-goldaccent border border-amber-500/30 shadow-lg' : 'text-gray-400 hover:bg-gray-800/40 hover:text-white'" class="flex items-center gap-3.5 px-4 py-3 rounded-xl transition cursor-pointer">
+                <a @click="currentTab = 'tools'; sidebarOpen = false;" :class="currentTab === 'tools' ? 'bg-amber-500/15 text-goldaccent border border-amber-500/30 shadow-lg' : 'text-gray-400 hover:bg-gray-800/40 hover:text-white'" class="flex items-center gap-3.5 px-4 py-3 rounded-xl transition cursor-pointer">
                     <i class="fa-solid fa-database w-5 text-sm"></i> Backup & CSV Export
                 </a>
             </nav>
@@ -261,13 +274,17 @@ TEMPLATE = """
 
         <!-- Main Content Area -->
         <main class="flex-1 flex flex-col overflow-y-auto bg-luxurybg">
-            <header class="glass-card border-b border-amber-500/20 px-8 py-4 flex justify-between items-center sticky top-0 z-10">
-                <div class="flex items-center gap-4">
-                    <div class="h-9 w-9 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-goldaccent font-black text-sm">
+            <header class="glass-card border-b border-amber-500/20 px-4 md:px-8 py-4 flex justify-between items-center sticky top-0 z-20">
+                <div class="flex items-center gap-3 md:gap-4">
+                    <!-- Hamburger / User Icon Toggle for Mobile -->
+                    <button @click="sidebarOpen = !sidebarOpen" class="md:hidden p-2 rounded-xl bg-amber-500/10 text-goldaccent border border-amber-500/30">
+                        <i class="fa-solid fa-bars text-base"></i>
+                    </button>
+                    <div class="h-9 w-9 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-goldaccent font-black text-sm hidden sm:flex">
                         SE
                     </div>
-                    <h1 class="text-sm font-bold text-white flex items-center gap-2">
-                        SHAYAN_EXPLORER <span class="text-gray-500">|</span> <span class="gold-gradient">Executive OSINT Hub</span>
+                    <h1 class="text-xs md:text-sm font-bold text-white flex items-center gap-1.5 md:gap-2">
+                        SHAYAN_EXPLORER <span class="text-gray-500 hidden sm:inline">|</span> <span class="gold-gradient">Executive OSINT Hub</span>
                     </h1>
                 </div>
                 <div class="flex items-center gap-4">
@@ -278,11 +295,11 @@ TEMPLATE = """
                 </div>
             </header>
 
-            <div class="p-8 max-w-7xl mx-auto w-full space-y-8">
+            <div class="p-4 md:p-8 max-w-7xl mx-auto w-full space-y-8">
 
                 <!-- TAB 1: EXECUTIVE OVERVIEW -->
                 <div x-show="currentTab === 'overview'" class="space-y-6">
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
                         <div class="glass-card p-6 rounded-3xl flex items-center justify-between">
                             <div>
                                 <p class="text-[11px] text-amber-500/80 uppercase font-bold tracking-wider">Active Vault Keys</p>
@@ -364,19 +381,19 @@ TEMPLATE = """
                     </div>
                 </div>
 
-                <!-- TAB 2: KEYS MANAGER & EDIT -->
+                <!-- TAB 2: KEYS MANAGER & GRANULAR TOOL SELECTOR -->
                 <div x-show="currentTab === 'keys'" class="space-y-6" x-data="{ search: '', showCreateModal: false, isLifetime: false }">
                     <div class="glass-card p-6 rounded-3xl space-y-4">
-                        <div class="flex justify-between items-center">
-                            <h3 class="text-sm font-bold text-white flex items-center gap-2"><i class="fa-solid fa-key text-goldaccent"></i> API Key Vault & IP Whitelist</h3>
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                            <h3 class="text-sm font-bold text-white flex items-center gap-2"><i class="fa-solid fa-key text-goldaccent"></i> API Key Vault & Granular Tool Selector</h3>
                             <button @click="showCreateModal = !showCreateModal" class="px-5 py-2.5 bg-gradient-to-r from-amber-400 to-yellow-600 text-black font-black text-xs uppercase tracking-wider rounded-xl gold-glow transition">
                                 <i class="fa-solid fa-plus mr-1"></i> Generate New Key
                             </button>
                         </div>
 
-                        <!-- CREATE KEY FORM -->
+                        <!-- CREATE KEY FORM WITH 28+ ENDPOINT SELECTOR -->
                         <div x-show="showCreateModal" class="p-6 rounded-2xl bg-black/60 border border-amber-500/30 space-y-4">
-                            <h4 class="text-xs font-bold uppercase tracking-wider text-goldaccent">Configure New Key</h4>
+                            <h4 class="text-xs font-bold uppercase tracking-wider text-goldaccent">Configure New Key & Permissions</h4>
                             <form method="POST" action="/create-key" class="space-y-4">
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
@@ -404,8 +421,8 @@ TEMPLATE = """
                                 </div>
 
                                 <div>
-                                    <label class="block text-[10px] uppercase font-bold text-amber-500/80 mb-2">Select Endpoints Access (Choose Specific or All)</label>
-                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 bg-black/50 p-4 rounded-xl border border-amber-500/20 text-[11px] max-h-48 overflow-y-auto">
+                                    <label class="block text-[10px] uppercase font-bold text-amber-500/80 mb-2">Select Endpoints Access (All 28+ APIs Available)</label>
+                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 bg-black/50 p-4 rounded-xl border border-amber-500/20 text-[11px] max-h-56 overflow-y-auto">
                                         <label class="flex items-center gap-2 text-goldaccent font-bold"><input type="checkbox" name="tools" value="ALL" checked class="rounded bg-black border-amber-500 text-amber-500"> All Tools (Full Access)</label>
                                         {% for title, ep, sample in ENDPOINTS_LIST %}
                                         <label class="flex items-center gap-2 text-gray-300"><input type="checkbox" name="tools" value="{{ ep }}" class="rounded bg-black border-amber-500/40 text-amber-500"> {{ title }}</label>
@@ -624,12 +641,12 @@ TEMPLATE = """
                 <!-- TAB 5: PUBLIC CATALOG (/public/endpoints) -->
                 <div x-show="currentTab === 'publicdocs'" class="space-y-6">
                     <div class="glass-card p-6 rounded-3xl space-y-6">
-                        <div class="flex justify-between items-center">
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                             <div>
                                 <h3 class="text-sm font-bold text-white flex items-center gap-2"><i class="fa-solid fa-globe text-goldaccent"></i> Public Unauthenticated Endpoints Catalog</h3>
                                 <p class="text-xs text-gray-400 mt-1">This catalog is accessible publicly without requiring an API key at <a href="/public/endpoints" target="_blank" class="text-goldaccent underline">/public/endpoints</a>.</p>
                             </div>
-                            <a href="/public/endpoints" target="_blank" class="px-4 py-2 bg-amber-500/10 text-goldaccent border border-amber-500/30 rounded-xl text-xs font-bold hover:bg-amber-500/20 transition">
+                            <a href="/public/endpoints" target="_blank" class="px-4 py-2 bg-amber-500/10 text-goldaccent border border-amber-500/30 rounded-xl text-xs font-bold hover:bg-amber-500/20 transition whitespace-nowrap">
                                 <i class="fa-solid fa-external-link mr-1"></i> Open Public JSON API
                             </a>
                         </div>
@@ -641,7 +658,7 @@ TEMPLATE = """
                                     <span class="font-bold text-white text-xs">{{ title }}</span>
                                     <span class="font-mono text-[10px] text-goldaccent bg-amber-500/10 px-2 py-0.5 rounded">/api/{{ ep }}</span>
                                 </div>
-                                <div class="text-[11px] font-mono text-gray-400 bg-black/60 p-2 rounded border border-gray-800">
+                                <div class="text-[11px] font-mono text-gray-400 bg-black/60 p-2 rounded border border-gray-800 select-all">
                                     Example: /api/{{ ep }}?key=YOUR_KEY&{{ sample }}
                                 </div>
                             </div>
